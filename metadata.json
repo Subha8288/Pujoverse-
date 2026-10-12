@@ -1,0 +1,6 @@
+{
+  "name": "PujoVerse - 10-Day Durga Puja Photo Contest & Arena",
+  "description": "PujoVerse: Daily Durga Puja photo contest featuring 10 days of challenges, custom pandal selection, user upload history, real-time battle arena, and live leaderboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

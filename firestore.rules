@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isRuler() {
+      return request.auth != null && (
+        request.auth.token.email == 'subhajitmishra8984@gmail.com' ||
+        request.auth.uid == 'ruler-subho'
+      );
+    }
+
+    // Test connection document
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    // Users profile collection
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Photos collection - Durga Puja photo battle submissions
+    match /photos/{photoId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // Custom pandals & landmarks across West Bengal
+    match /pandals/{pandalId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    // Real-time Adda chat messages
+    match /messages/{messageId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+  }
+}

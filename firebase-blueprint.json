@@ -1,0 +1,208 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile for players and master ruler in PujoVerse",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "avatar": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "isOwner": {
+          "type": "boolean"
+        },
+        "gear": {
+          "type": "string"
+        },
+        "bio": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "userId",
+        "displayName"
+      ]
+    },
+    "PhotoEntry": {
+      "title": "PhotoEntry",
+      "description": "Durga Puja photography contest submission",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "dayNumber": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        },
+        "pandalId": {
+          "type": "string"
+        },
+        "pandalName": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "district": {
+          "type": "string"
+        },
+        "uploaderId": {
+          "type": "string"
+        },
+        "uploaderName": {
+          "type": "string"
+        },
+        "uploaderAvatar": {
+          "type": "string"
+        },
+        "isRealHumanVerified": {
+          "type": "boolean"
+        },
+        "imageUrl": {
+          "type": "string"
+        },
+        "cameraGear": {
+          "type": "string"
+        },
+        "upvotes": {
+          "type": "number"
+        },
+        "voters": {
+          "type": "array"
+        },
+        "commentsCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "dayNumber",
+        "title",
+        "imageUrl",
+        "uploaderId"
+      ]
+    },
+    "PandalLandmark": {
+      "title": "PandalLandmark",
+      "description": "Custom pandal or landmark across West Bengal registered by human players",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "zone": {
+          "type": "string"
+        },
+        "district": {
+          "type": "string"
+        },
+        "landmark": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "nearestStation": {
+          "type": "string"
+        },
+        "creatorId": {
+          "type": "string"
+        },
+        "creatorName": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "isApproved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "zone",
+        "district"
+      ]
+    },
+    "AddaMessage": {
+      "title": "AddaMessage",
+      "description": "Community live Adda chat message during Durga Puja battle arena",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "senderId": {
+          "type": "string"
+        },
+        "senderName": {
+          "type": "string"
+        },
+        "senderAvatar": {
+          "type": "string"
+        },
+        "isRuler": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "senderId",
+        "senderName",
+        "text"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles stored by user ID"
+    },
+    "/photos/{photoId}": {
+      "schema": "PhotoEntry",
+      "description": "Submissions for daily Durga Puja photo battle"
+    },
+    "/pandals/{pandalId}": {
+      "schema": "PandalLandmark",
+      "description": "Directory of custom pandals and landmarks across West Bengal"
+    },
+    "/messages/{messageId}": {
+      "schema": "AddaMessage",
+      "description": "Real-time community chat messages"
+    }
+  }
+}
