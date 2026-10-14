@@ -55,7 +55,7 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({ photo, isOpen, o
             <div className="flex items-center gap-1.5">
               <Flame className="w-4 h-4 text-amber-400" />
               <span className="text-xs font-black font-display text-amber-300 uppercase tracking-wider">
-                PujoVerse · Puja 2026
+                PujoVerse
               </span>
             </div>
             <span className="text-[10px] font-mono text-slate-400">Day {photo.dayNumber} Entry</span>

@@ -3,7 +3,9 @@ import { PhotoEntry, ChatMessage } from '../types/contest';
 export type RealTimeEvent =
   | { type: 'VOTE_CAST'; payload: { photoId: string; newVotes: number; isDuelWin?: boolean } }
   | { type: 'PHOTO_SUBMITTED'; payload: PhotoEntry }
+  | { type: 'PHOTO_DELETED'; payload: { photoId: string } }
   | { type: 'CHAT_MESSAGE'; payload: ChatMessage }
+  | { type: 'CHAT_MESSAGE_DELETED'; payload: { id: string } }
   | { type: 'WINNER_SHOUTOUT'; payload: { dayNumber: number; photo: PhotoEntry } }
   | { type: 'ONLINE_STATUS'; payload: { onlineCount: number } };
 

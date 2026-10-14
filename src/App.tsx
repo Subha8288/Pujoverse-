@@ -6,7 +6,9 @@ import {
   UserProfile,
   ViewTab,
   PandalLandmark,
-  PhotoComment
+  PhotoComment,
+  VideoEntry,
+  VideoComment
 } from './types/contest';
 import { StorageService } from './services/storage';
 import { realtimeService, RealTimeEvent } from './services/realtime';
@@ -15,47 +17,49 @@ import { FestivalTimeline } from './components/FestivalTimeline';
 import { PhotoOfTheDayBanner } from './components/PhotoOfTheDayBanner';
 import { PhotoCard } from './components/PhotoCard';
 import { PhotoBattleArena } from './components/PhotoBattleArena';
+import { VideoBattleArena } from './components/VideoBattleArena';
 import { Leaderboard } from './components/Leaderboard';
 import { UploadModal } from './components/UploadModal';
 import { AddaChatDrawer } from './components/AddaChatDrawer';
 import { PhotoDetailModal } from './components/PhotoDetailModal';
+import { VideoDetailModal } from './components/VideoDetailModal';
 import { WinnerShoutoutModal } from './components/WinnerShoutoutModal';
 import { ShareCardModal } from './components/ShareCardModal';
-import { PhotoTipsModal } from './components/PhotoTipsModal';
 import { UserProfileModal } from './components/UserProfileModal';
-import { PastWinnersGallery } from './components/PastWinnersGallery';
 import { OfflineNotice } from './components/OfflineNotice';
 import { AuthModal } from './components/AuthModal';
 import { OwnerDashboard } from './components/OwnerDashboard';
 import { EditPhotoModal } from './components/EditPhotoModal';
 import { CustomPandalModal } from './components/CustomPandalModal';
-import { WebsiteLaunchModal } from './components/WebsiteLaunchModal';
+import { UpgradedFestiveIntro } from './components/UpgradedFestiveIntro';
 import { FirebaseService, getIsCloudConnected } from './services/firebase';
 import {
   Flame,
   Clock,
   Swords,
   Trophy,
-  BookOpen,
   Sparkles,
   Crown,
   Bell,
   Heart,
   Camera,
+  Film,
+  Plus,
   Filter,
   CheckCircle2,
   MapPin,
   UserCheck,
   Lock,
-  Unlock,
-  Globe
+  Unlock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export default function App() {
-  // App & Contest State: Day 1 is gone/concluded, Day 2 is active today
+  // App & Contest State: Following real clock calendar (Today 13 Oct 2026 is Day 3 Tritiya)
   const [currentTab, setCurrentTab] = useState<ViewTab>('arena');
-  const [selectedDayNumber, setSelectedDayNumber] = useState<number>(2);
+  const [selectedDayNumber, setSelectedDayNumber] = useState<number>(() =>
+    StorageService.getCurrentActiveDayNumber()
+  );
   const [photos, setPhotos] = useState<PhotoEntry[]>(() => StorageService.getPhotos());
   const [festivalDays, setFestivalDays] = useState<FestivalDay[]>(() =>
     StorageService.getFestivalDays()
@@ -73,26 +77,34 @@ export default function App() {
   const [dailyVotesMap, setDailyVotesMap] = useState<Record<number, string>>(() =>
     StorageService.getDailyVotesMap(StorageService.getCurrentUser().id)
   );
+  const [videos, setVideos] = useState<VideoEntry[]>(() => StorageService.getVideos());
+  const [dailyVideoVotesMap, setDailyVideoVotesMap] = useState<Record<number, string>>(() =>
+    StorageService.getDailyVideoVotesMap(StorageService.getCurrentUser().id)
+  );
+  const [votedVideoIds, setVotedVideoIds] = useState<string[]>(() =>
+    StorageService.getVotedVideoIds(StorageService.getCurrentUser().id)
+  );
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() =>
     StorageService.getNotificationsEnabled()
   );
 
   // Modals & Drawers
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [uploadModalType, setUploadModalType] = useState<'photo' | 'video'>('photo');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [inspectedPhoto, setInspectedPhoto] = useState<PhotoEntry | null>(null);
+  const [inspectedVideo, setInspectedVideo] = useState<VideoEntry | null>(null);
   const [sharedPhoto, setSharedPhoto] = useState<PhotoEntry | null>(null);
   const [isShoutoutOpen, setIsShoutoutOpen] = useState(false);
   const [shoutoutWinner, setShoutoutWinner] = useState<PhotoEntry | null>(null);
-  const [isTipsModalOpen, setIsTipsModalOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isOwnerPortalOpen, setIsOwnerPortalOpen] = useState(false);
   const [editingPhoto, setEditingPhoto] = useState<PhotoEntry | null>(null);
   const [isCustomPandalModalOpen, setIsCustomPandalModalOpen] = useState(false);
-  const [isWebsiteLaunchOpen, setIsWebsiteLaunchOpen] = useState(false);
 
-  // 11:00 PM Daily Battle Cutoff State
+  // Upgraded Festive Welcome Intro (starts with intro on load/refresh by default, remembers logged-in user)
+  const [isIntroOpen, setIsIntroOpen] = useState<boolean>(true);
   const [isSimulatedPast11PM, setIsSimulatedPast11PM] = useState(false);
   const currentHour = new Date().getHours();
   const isPast11PM = isSimulatedPast11PM || currentHour >= 23;
@@ -167,11 +179,21 @@ export default function App() {
           return updated;
         });
         showToast('New Entry on PujoVerse!', `"${newPhoto.title}" at ${newPhoto.pandalLocation}`);
+      } else if (event.type === 'PHOTO_DELETED') {
+        const { photoId } = event.payload;
+        setPhotos((prev) => prev.filter((p) => p.id !== photoId));
       } else if (event.type === 'CHAT_MESSAGE') {
         const msg = event.payload;
         setChatMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
           const updated = [...prev, msg];
+          StorageService.saveChatMessages(updated);
+          return updated;
+        });
+      } else if (event.type === 'CHAT_MESSAGE_DELETED') {
+        const { id } = event.payload;
+        setChatMessages((prev) => {
+          const updated = prev.filter((m) => m.id !== id);
           StorageService.saveChatMessages(updated);
           return updated;
         });
@@ -196,13 +218,19 @@ export default function App() {
 
   // Firebase Firestore Real-Time Multi-Device Cloud Sync
   useEffect(() => {
-    // 1. Sync cloud photos across devices
+    // 1. Sync cloud photos across devices (strictly excluding deleted photos)
     const unsubPhotos = FirebaseService.subscribeToPhotos((cloudPhotos) => {
       if (cloudPhotos && cloudPhotos.length > 0) {
+        const deletedIds = new Set(StorageService.getDeletedPhotoIds());
         setPhotos((prevLocal) => {
           const map = new Map<string, PhotoEntry>();
-          prevLocal.forEach((p) => map.set(p.id, p));
+          prevLocal.forEach((p) => {
+            if (!deletedIds.has(p.id)) {
+              map.set(p.id, p);
+            }
+          });
           cloudPhotos.forEach((p) => {
+            if (deletedIds.has(p.id)) return; // DO NOT RESURRECT DELETED PHOTOS
             const existing = map.get(p.id);
             if (existing) {
               // keep higher votes and newest data
@@ -222,7 +250,38 @@ export default function App() {
       }
     });
 
-    // 2. Sync custom pandals & landmarks across West Bengal
+    // 2. Sync cloud videos across devices
+    const unsubVideos = FirebaseService.subscribeToVideos((cloudVideos) => {
+      if (cloudVideos && cloudVideos.length > 0) {
+        const deletedIds = new Set(StorageService.getDeletedVideoIds());
+        setVideos((prevLocal) => {
+          const map = new Map<string, VideoEntry>();
+          prevLocal.forEach((v) => {
+            if (!deletedIds.has(v.id)) {
+              map.set(v.id, v);
+            }
+          });
+          cloudVideos.forEach((v) => {
+            if (deletedIds.has(v.id)) return;
+            const existing = map.get(v.id);
+            if (existing) {
+              map.set(v.id, {
+                ...existing,
+                ...v,
+                votes: Math.max(existing.votes || 0, v.votes || 0)
+              });
+            } else {
+              map.set(v.id, v);
+            }
+          });
+          const merged = Array.from(map.values());
+          StorageService.saveVideos(merged);
+          return merged;
+        });
+      }
+    });
+
+    // 3. Sync custom pandals & landmarks across West Bengal
     const unsubPandals = FirebaseService.subscribeToPandals((cloudPandals) => {
       if (cloudPandals && cloudPandals.length > 0) {
         setPandalsList((prev) => {
@@ -237,7 +296,7 @@ export default function App() {
       }
     });
 
-    // 3. Sync community Adda chat messages
+    // 4. Sync community Adda chat messages
     const unsubChat = FirebaseService.subscribeToChat((cloudMessages) => {
       if (cloudMessages && cloudMessages.length > 0) {
         setChatMessages((prev) => {
@@ -255,6 +314,7 @@ export default function App() {
 
     return () => {
       unsubPhotos();
+      unsubVideos();
       unsubPandals();
       unsubChat();
     };
@@ -522,6 +582,119 @@ export default function App() {
     showToast('Photo Submitted & Saved to Your Account!', `Track your rank in PujoVerse Live Leaderboard!`);
   };
 
+  // Handle Video / Reel Vote (Strict 1 vote per day rule)
+  const handleVoteVideo = (videoId: string) => {
+    if (isPast11PM) {
+      showToast('Daily Battle Closed', 'Uploads and voting ended at 11:00 PM. Results are locked!');
+      return;
+    }
+
+    const currentDayVotedId = dailyVideoVotesMap[selectedDayNumber];
+    if (currentDayVotedId) {
+      showToast(
+        '1 Vote Already Recorded',
+        `You have only 1 chance to vote for Day ${selectedDayNumber} in Video Arena!`
+      );
+      return;
+    }
+
+    const video = videos.find((v) => v.id === videoId);
+    if (!video) return;
+
+    const newVoteCount = video.votes + 1;
+    StorageService.setDailyVideoVote(currentUser.id, selectedDayNumber, videoId);
+    setDailyVideoVotesMap((prev) => ({ ...prev, [selectedDayNumber]: videoId }));
+    setVotedVideoIds((prev) => [...prev, videoId]);
+
+    setVideos((prev) =>
+      prev.map((v) => (v.id === videoId ? { ...v, votes: newVoteCount } : v))
+    );
+
+    FirebaseService.updateVideo(videoId, { votes: newVoteCount });
+
+    confetti({
+      particleCount: 35,
+      spread: 60,
+      origin: { y: 0.8 },
+      colors: ['#F43F5E', '#FB7185', '#F59E0B']
+    });
+
+    showToast('Your 1 Daily Video Vote Counted!', `Successfully voted for "${video.title}" by ${video.videographerName}.`);
+  };
+
+  // Handle Video Submit
+  const handleVideoSubmit = (
+    entryData: Omit<VideoEntry, 'id' | 'votes' | 'wins' | 'matchups' | 'timestamp'>
+  ) => {
+    if (isPast11PM) {
+      showToast('11:00 PM Cutoff Passed', 'Submissions for today are closed.');
+      return;
+    }
+
+    const newId = `vid-${Date.now()}`;
+    const newVideo: VideoEntry = {
+      ...entryData,
+      id: newId,
+      userId: currentUser.id,
+      votes: 1,
+      wins: 0,
+      matchups: 0,
+      timestamp: 'Just now',
+      awardBadge: 'New Reel'
+    };
+
+    setVideos((prev) => [newVideo, ...prev]);
+
+    StorageService.addUploadedVideoToUser(currentUser.id, newId);
+    setCurrentUser((prev) => {
+      const existing = prev.uploadedVideoIds || [];
+      const updated = {
+        ...prev,
+        uploadedVideoIds: [newId, ...existing]
+      };
+      StorageService.setCurrentUser(updated);
+      return updated;
+    });
+
+    FirebaseService.saveVideo(newVideo);
+
+    if (entryData.dayNumber !== selectedDayNumber) {
+      setSelectedDayNumber(entryData.dayNumber);
+    }
+
+    confetti({
+      particleCount: 50,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#F43F5E', '#FB7185', '#F59E0B']
+    });
+
+    showToast('Video Reel Published to Video Arena!', `"${newVideo.title}" is now competing in Day ${newVideo.dayNumber} battle!`);
+  };
+
+  const handleDeleteVideo = (videoId: string) => {
+    const updated = StorageService.deleteVideo(videoId);
+    setVideos(updated);
+    FirebaseService.deleteVideo(videoId);
+    if (inspectedVideo && inspectedVideo.id === videoId) {
+      setInspectedVideo(null);
+    }
+    showToast('Video Removed', 'Entry was removed from Video Arena.');
+  };
+
+  const handleAddVideoComment = (videoId: string, comment: VideoComment) => {
+    const updated = StorageService.addVideoComment(videoId, comment);
+    setVideos(updated);
+    if (inspectedVideo && inspectedVideo.id === videoId) {
+      const current = updated.find((v) => v.id === videoId);
+      if (current) setInspectedVideo(current);
+    }
+    FirebaseService.updateVideo(videoId, {
+      comments: updated.find((v) => v.id === videoId)?.comments || []
+    });
+    showToast('Festive Praise Shared!', 'Your comment was posted on the reel.');
+  };
+
   // Handle Chat Message
   const handleSendMessage = (text: string, reactionEmoji?: string) => {
     const newMsg: ChatMessage = {
@@ -529,9 +702,11 @@ export default function App() {
       userId: currentUser.id,
       userName: currentUser.name,
       userAvatar: currentUser.avatar,
+      isOwner: currentUser.isOwner,
+      isOfficial: currentUser.isOwner || currentUser.role === 'owner',
       text,
       reactionEmoji,
-      timestamp: 'Just now'
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
     setChatMessages((prev) => {
@@ -549,12 +724,59 @@ export default function App() {
     });
   };
 
+  const handleDeleteChatMessage = (messageId: string) => {
+    setChatMessages((prev) => {
+      const updated = prev.filter((m) => m.id !== messageId);
+      StorageService.saveChatMessages(updated);
+      return updated;
+    });
+    realtimeService.broadcast({
+      type: 'CHAT_MESSAGE_DELETED',
+      payload: { id: messageId }
+    });
+    showToast('Message Deleted', 'Removed from Festive Adda Lounge.');
+  };
+
+  const handleDeleteProfile = (userId: string) => {
+    // Delete from Cloud Firestore if present
+    FirebaseService.deleteUserProfile(userId);
+
+    const result = StorageService.deleteUser(userId);
+    if (!result.success) {
+      showToast('Action Restricted', result.error || 'Cannot delete this profile.');
+      return;
+    }
+    const updatedUsers = StorageService.getUsersList();
+    setAllUsers(updatedUsers);
+    if (result.nextUser) {
+      setCurrentUser(result.nextUser);
+      setVotedIds(StorageService.getVotedPhotoIds(result.nextUser.id));
+      setDailyVotesMap(StorageService.getDailyVotesMap(result.nextUser.id));
+      setVotedVideoIds(StorageService.getVotedVideoIds(result.nextUser.id));
+      setDailyVideoVotesMap(StorageService.getDailyVideoVotesMap(result.nextUser.id));
+    } else {
+      const fallback = StorageService.getCurrentUser();
+      setCurrentUser(fallback);
+      setVotedIds([]);
+      setDailyVotesMap({});
+      setVotedVideoIds([]);
+      setDailyVideoVotesMap({});
+    }
+    setIsProfileOpen(false);
+    if (currentTab === 'profile') {
+      setCurrentTab('arena');
+    }
+    showToast('Profile Deleted', 'The profile and its associated data were removed.');
+  };
+
   // Switch or Create Account
   const handleSelectUser = (user: UserProfile) => {
     setCurrentUser(user);
     StorageService.setCurrentUser(user);
     setVotedIds(StorageService.getVotedPhotoIds(user.id));
     setDailyVotesMap(StorageService.getDailyVotesMap(user.id));
+    setVotedVideoIds(StorageService.getVotedVideoIds(user.id));
+    setDailyVideoVotesMap(StorageService.getDailyVideoVotesMap(user.id));
     showToast(`Switched to ${user.name}!`, `Loaded your remembered upload history and stats.`);
   };
 
@@ -564,6 +786,8 @@ export default function App() {
     setAllUsers(StorageService.getUsersList());
     setVotedIds(StorageService.getVotedPhotoIds(newUser.id));
     setDailyVotesMap(StorageService.getDailyVotesMap(newUser.id));
+    setVotedVideoIds(StorageService.getVotedVideoIds(newUser.id));
+    setDailyVideoVotesMap(StorageService.getDailyVideoVotesMap(newUser.id));
     showToast(`Profile Created for ${newUser.name}!`, `Welcome to PujoVerse.`);
   };
 
@@ -609,6 +833,8 @@ export default function App() {
       setAllUsers(StorageService.getUsersList());
       setVotedIds(StorageService.getVotedPhotoIds(user.id));
       setDailyVotesMap(StorageService.getDailyVotesMap(user.id));
+      setVotedVideoIds(StorageService.getVotedVideoIds(user.id));
+      setDailyVideoVotesMap(StorageService.getDailyVideoVotesMap(user.id));
 
       if (user.isOwner) {
         confetti({
@@ -684,6 +910,11 @@ export default function App() {
     // Delete from Cloud Firestore
     FirebaseService.deletePhoto(photoId);
 
+    realtimeService.broadcast({
+      type: 'PHOTO_DELETED',
+      payload: { photoId }
+    });
+
     if (inspectedPhoto && inspectedPhoto.id === photoId) {
       setInspectedPhoto(null);
     }
@@ -691,6 +922,14 @@ export default function App() {
       setEditingPhoto(null);
     }
     showToast('Photo Removed', 'Entry was removed from contest.');
+  };
+
+  const handleClearAllPhotos = () => {
+    StorageService.clearAllPhotos();
+    setPhotos([]);
+    if (inspectedPhoto) setInspectedPhoto(null);
+    if (editingPhoto) setEditingPhoto(null);
+    showToast('All Uploaded Photos Wiped', 'Contest arena has been reset to a fresh empty state.');
   };
 
   const handleClearMyDailyVote = () => {
@@ -781,9 +1020,13 @@ export default function App() {
         onlineParticipants={onlineCount}
         currentUser={currentUser}
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenProfile={() => {
+          setCurrentTab('profile');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
         onOpenOwnerPortal={() => setIsOwnerPortalOpen(true)}
         onOpenPandalsModal={() => setIsCustomPandalModalOpen(true)}
-        onOpenWebsiteGuide={() => setIsWebsiteLaunchOpen(true)}
+        onOpenIntro={() => setIsIntroOpen(true)}
       />
 
       {/* 9-Day Festival Timeline (Day 1 Gone, Day 2 Active) */}
@@ -793,16 +1036,16 @@ export default function App() {
         onSelectDay={(dayNum) => {
           setSelectedDayNumber(dayNum);
           setSelectedPandalFilter('All Pandals');
-          if (currentTab !== 'arena' && currentTab !== 'leaderboard' && currentTab !== 'duel') {
+          if (currentTab !== 'arena' && currentTab !== 'leaderboard') {
             setCurrentTab('arena');
           }
         }}
       />
 
       {/* Main View Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-24 md:pb-8">
         {/* VIEW 1: TODAY'S ARENA (All-Participant Battle Arena with Photo of the Day Banner & 1 Vote Rule) */}
-        {(currentTab === 'arena' || currentTab === 'duel') && (
+        {currentTab === 'arena' && (
           <div className="space-y-6">
             {/* Custom Pandal & Landmark Selector Bar */}
             <div className="bg-[#141624] rounded-2xl border border-white/10 p-4 shadow-lg">
@@ -892,97 +1135,73 @@ export default function App() {
               onOpenUploadModal={() => setIsUploadOpen(true)}
               onOpenProfileModal={() => setCurrentTab('profile')}
               onEditPhoto={(p) => setEditingPhoto(p)}
+              onDeletePhoto={handleDeletePhoto}
               isPast11PM={isPast11PM}
               timeUntil11PM={timeUntil11PM}
             />
           </div>
         )}
 
+        {/* VIEW 2: VIDEO ARENA (Durga Puja Reels, Dhunuchi Dance, Arati & Illumination Walkthroughs) */}
+        {currentTab === 'video-arena' && (
+          <VideoBattleArena
+            videos={videos}
+            currentDay={activeFestivalDay}
+            votedVideoId={dailyVideoVotesMap[selectedDayNumber] || null}
+            onVoteVideo={handleVoteVideo}
+            onInspectVideo={(v) => setInspectedVideo(v)}
+            onShareVideo={(v) => {
+              setSharedPhoto({
+                id: v.id,
+                dayNumber: v.dayNumber,
+                title: v.title,
+                imageUrl: v.thumbnailUrl,
+                photographerName: v.videographerName,
+                photographerAvatar: v.videographerAvatar,
+                instagramHandle: v.instagramHandle,
+                pandalLocation: v.pandalLocation,
+                city: v.city,
+                cameraGear: v.cameraGear || { cameraOrPhone: 'Video Reel' },
+                caption: v.caption,
+                votes: v.votes,
+                wins: v.wins || 0,
+                matchups: v.matchups || 0,
+                timestamp: v.timestamp,
+                tags: v.tags
+              });
+            }}
+            currentUser={currentUser}
+            onOpenUploadVideo={() => {
+              setUploadModalType('video');
+              setIsUploadOpen(true);
+            }}
+            selectedPandalFilter={selectedPandalFilter}
+            onSelectPandalFilter={setSelectedPandalFilter}
+            presentPandals={presentPandals}
+            filterMode={filterMode}
+            onFilterModeChange={setFilterMode}
+            isPast11PM={isPast11PM}
+            timeUntil11PM={timeUntil11PM}
+          />
+        )}
+
         {/* VIEW 3: LIVE LEADERBOARD & FINAL 11 PM RANK TRACKING */}
         {currentTab === 'leaderboard' && (
           <Leaderboard
             photos={currentDayPhotos}
+            videos={videos}
             selectedDayNumber={selectedDayNumber}
             onInspectPhoto={(p) => setInspectedPhoto(p)}
+            onInspectVideo={(v) => setInspectedVideo(v)}
             onVotePhoto={handleVote}
+            onVoteVideo={handleVoteVideo}
             votedIds={votedIds}
+            votedVideoIds={votedVideoIds}
             isPast11PM={isPast11PM}
           />
         )}
 
-        {/* VIEW 4: PAST WINNERS HALL OF FAME */}
-        {currentTab === 'past_winners' && (
-          <PastWinnersGallery
-            days={festivalDays}
-            allPhotos={photos}
-            onInspectPhoto={(p) => setInspectedPhoto(p)}
-            onSharePhoto={(p) => setSharedPhoto(p)}
-          />
-        )}
 
-        {/* VIEW 5: PHOTO MASTERCLASS & CRITIQUE */}
-        {currentTab === 'tips' && (
-          <div className="max-w-4xl mx-auto py-4">
-            <div className="text-center max-w-xl mx-auto mb-6">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-300 text-xs font-semibold mb-2 font-mono">
-                <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                <span>PujoVerse Masterclass</span>
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display">
-                Improve Your Festival Photography
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                Professional lighting techniques, camera EXIF recommendations, and cultural storytelling tips for each day of Durga Puja.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              {festivalDays.map((day) => (
-                <div
-                  key={day.dayNumber}
-                  className="bg-[#141624] rounded-2xl border border-white/5 p-5 hover:border-amber-500/30 transition-all"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/5">
-                    <div>
-                      <span className="text-xs font-mono font-bold text-amber-400 uppercase">
-                        Day {day.dayNumber}: {day.bengaliTitle}
-                      </span>
-                      <h3 className="text-base font-bold text-white font-display mt-0.5">
-                        {day.title}
-                      </h3>
-                    </div>
-                    <span className="text-xs font-mono text-slate-400 bg-white/5 px-2.5 py-1 rounded-lg self-start">
-                      {day.photographyTip.category}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-300 mt-3 leading-relaxed">
-                    {day.photographyTip.body}
-                  </p>
-
-                  <div className="mt-4 pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="text-slate-400">
-                      Recommended Gear & Settings:{' '}
-                      <span className="text-amber-400 font-mono font-bold">
-                        {day.photographyTip.proSettingSuggestion}
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setSelectedDayNumber(day.dayNumber);
-                        setCurrentTab('arena');
-                      }}
-                      className="text-xs text-amber-300 hover:text-amber-200 font-semibold self-start sm:self-auto"
-                    >
-                      View Day {day.dayNumber} Submissions →
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* VIEW 6: USER PROFILE */}
         {currentTab === 'profile' && (
@@ -996,11 +1215,14 @@ export default function App() {
               onUpdateProfile={(updated) => {
                 setCurrentUser(updated);
                 StorageService.setCurrentUser(updated);
-                showToast('Profile Updated', 'Your bio, camera gear, and DP were saved.');
+                setAllUsers(StorageService.getUsersList());
+                showToast('Profile Updated', 'Your customized location, favorite pandal, and bio were saved.');
               }}
               onInspectPhoto={(p) => setInspectedPhoto(p)}
               onOpenSwitchAccount={() => setIsAuthModalOpen(true)}
               onOpenOwnerPortal={() => setIsOwnerPortalOpen(true)}
+              onDeleteProfile={handleDeleteProfile}
+              onDeletePhoto={handleDeletePhoto}
             />
           </div>
         )}
@@ -1053,19 +1275,6 @@ export default function App() {
             )}
 
             <button
-              onClick={() => setIsWebsiteLaunchOpen(true)}
-              className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Launch Website</span>
-            </button>
-            <button
-              onClick={() => setIsTipsModalOpen(true)}
-              className="hover:text-amber-400 transition-colors"
-            >
-              Photo Guide
-            </button>
-            <button
               onClick={() => setIsAuthModalOpen(true)}
               className="hover:text-amber-400 transition-colors"
             >
@@ -1104,6 +1313,8 @@ export default function App() {
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         onSubmit={handlePhotoSubmit}
+        onSubmitVideo={handleVideoSubmit}
+        initialType={uploadModalType}
         currentDayNumber={selectedDayNumber}
         currentUser={currentUser}
         isPast11PM={isPast11PM}
@@ -1117,6 +1328,7 @@ export default function App() {
         onSelectUser={handleSelectUser}
         onCreateUser={handleCreateUser}
         onSignInWithEmail={handleSignInWithEmail}
+        onDeleteUser={handleDeleteProfile}
       />
 
       <PhotoDetailModal
@@ -1132,6 +1344,39 @@ export default function App() {
         onAddComment={handleAddComment}
         onEditPhoto={(p) => setEditingPhoto(p)}
         onDeleteComment={handleDeleteComment}
+        onDeletePhoto={handleDeletePhoto}
+      />
+
+      {/* Video Reel Detail & Player Modal */}
+      <VideoDetailModal
+        video={inspectedVideo}
+        isOpen={Boolean(inspectedVideo)}
+        onClose={() => setInspectedVideo(null)}
+        hasVoted={inspectedVideo ? dailyVideoVotesMap[selectedDayNumber] === inspectedVideo.id : false}
+        onVote={handleVoteVideo}
+        onAddComment={handleAddVideoComment}
+        currentUser={currentUser}
+        onShare={(v) => {
+          setSharedPhoto({
+            id: v.id,
+            dayNumber: v.dayNumber,
+            title: v.title,
+            imageUrl: v.thumbnailUrl,
+            photographerName: v.videographerName,
+            photographerAvatar: v.videographerAvatar,
+            instagramHandle: v.instagramHandle,
+            pandalLocation: v.pandalLocation,
+            city: v.city,
+            cameraGear: v.cameraGear || { cameraOrPhone: 'Video Reel' },
+            caption: v.caption,
+            votes: v.votes,
+            wins: v.wins || 0,
+            matchups: v.matchups || 0,
+            timestamp: v.timestamp,
+            tags: v.tags
+          });
+        }}
+        onDeleteVideo={handleDeleteVideo}
       />
 
       <AddaChatDrawer
@@ -1139,7 +1384,10 @@ export default function App() {
         onClose={() => setIsChatOpen(false)}
         messages={chatMessages}
         onSendMessage={handleSendMessage}
+        onDeleteMessage={handleDeleteChatMessage}
         onlineCount={onlineCount}
+        currentUser={currentUser}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
       <WinnerShoutoutModal
@@ -1157,13 +1405,6 @@ export default function App() {
         onClose={() => setSharedPhoto(null)}
       />
 
-      <PhotoTipsModal
-        isOpen={isTipsModalOpen}
-        onClose={() => setIsTipsModalOpen(false)}
-        days={festivalDays}
-        initialDayNumber={selectedDayNumber}
-      />
-
       {/* Owner Access & Grand Juror Portal Modal */}
       <OwnerDashboard
         isOpen={isOwnerPortalOpen}
@@ -1176,6 +1417,7 @@ export default function App() {
         onUpdateDay={handleUpdateDay}
         onUpdatePhoto={handleUpdatePhoto}
         onDeletePhoto={handleDeletePhoto}
+        onClearAllPhotos={handleClearAllPhotos}
         onToggle11PMOverride={() => setIsSimulatedPast11PM((prev) => !prev)}
         onClearMyDailyVote={handleClearMyDailyVote}
         onResetAllVotes={handleResetAllVotes}
@@ -1215,12 +1457,103 @@ export default function App() {
         }}
       />
 
-      {/* Website Launch & Vercel/Netlify Publishing Guide Modal */}
-      <WebsiteLaunchModal
-        isOpen={isWebsiteLaunchOpen}
-        onClose={() => setIsWebsiteLaunchOpen(false)}
-        isCloudConnected={getIsCloudConnected()}
+      {/* Upgraded Festive Welcome Intro Experience */}
+      <UpgradedFestiveIntro
+        isOpen={isIntroOpen}
+        onEnter={() => setIsIntroOpen(false)}
       />
+
+      {/* Mobile Sticky Bottom Navigation Bar (Phone-Optimized Quick Access) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d0f17]/95 backdrop-blur-lg border-t border-white/10 md:hidden flex items-center justify-around px-2 py-2 text-[10px] font-semibold text-slate-400 shadow-2xl">
+        <button
+          onClick={() => {
+            setCurrentTab('arena');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex flex-col items-center gap-1 p-1 transition-colors ${
+            currentTab === 'arena' ? 'text-amber-400 font-bold' : 'hover:text-slate-200'
+          }`}
+        >
+          <Camera className="w-4.5 h-4.5" />
+          <span>Photos</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setCurrentTab('video-arena');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex flex-col items-center gap-1 p-1 transition-colors ${
+            currentTab === 'video-arena' ? 'text-rose-400 font-bold' : 'hover:text-slate-200'
+          }`}
+        >
+          <Film className="w-4.5 h-4.5" />
+          <span>Videos</span>
+        </button>
+
+        {/* Central Prominent Upload Button for One-Thumb Mobile Uploads */}
+        <button
+          onClick={() => {
+            setUploadModalType(currentTab === 'video-arena' ? 'video' : 'photo');
+            setIsUploadOpen(true);
+          }}
+          className="flex flex-col items-center justify-center -mt-5 w-12 h-12 rounded-full bg-gradient-to-tr from-amber-400 to-amber-300 text-slate-950 shadow-lg shadow-amber-500/30 active:scale-95 transition-transform"
+          title="Upload Entry"
+          aria-label="Upload Entry"
+        >
+          <Plus className="w-6 h-6 stroke-[3] text-slate-950" />
+        </button>
+
+        <button
+          onClick={() => {
+            setCurrentTab('leaderboard');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex flex-col items-center gap-1 p-1 transition-colors ${
+            currentTab === 'leaderboard' ? 'text-amber-400 font-bold' : 'hover:text-slate-200'
+          }`}
+        >
+          <Trophy className="w-4.5 h-4.5" />
+          <span>Ranks</span>
+        </button>
+
+        {/* Dedicated Profile Tab - 100% VISIBLE & EASY TO TAP ON PHONE */}
+        <button
+          onClick={() => {
+            setCurrentTab('profile');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex flex-col items-center gap-1 p-1 transition-colors ${
+            currentTab === 'profile' ? 'text-amber-400 font-bold' : 'hover:text-slate-200'
+          }`}
+          title="My Profile & Customized Location Details"
+        >
+          <div className="relative">
+            <img
+              src={currentUser.avatar}
+              alt={currentUser.name}
+              className={`w-5 h-5 rounded-full object-cover ${
+                currentTab === 'profile' ? 'border-2 border-amber-400 ring-2 ring-amber-400/40' : 'border border-amber-400/70'
+              }`}
+            />
+            {currentUser.isOwner && (
+              <span className="absolute -top-1 -right-1 text-[8px]">👑</span>
+            )}
+          </div>
+          <span>Profile</span>
+        </button>
+      </nav>
+
+      {/* Floating Adda Lounge Button on Mobile (Always accessible above bottom bar) */}
+      <button
+        onClick={() => setIsChatOpen(true)}
+        className="md:hidden fixed bottom-18 right-3.5 z-30 p-2.5 rounded-full bg-gradient-to-r from-amber-500 to-rose-600 text-white shadow-xl shadow-rose-950/60 border border-white/20 active:scale-90 transition-transform flex items-center justify-center cursor-pointer"
+        title="Open Festive Adda Chat"
+        aria-label="Open Festive Adda Chat"
+      >
+        <span className="text-base leading-none">💬</span>
+      </button>
+
     </div>
   );
 }

@@ -329,16 +329,16 @@ export const EditPhotoModal: React.FC<EditPhotoModalProps> = ({
                 onChange={(e) => setDayNumber(Number(e.target.value))}
                 className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
               >
-                <option value={1}>Day 1: Mahalaya (11 Oct) - Concluded</option>
-                <option value={2}>Day 2: Maha Saptami (12 Oct) - Live Active</option>
-                <option value={3}>Day 3: Maha Ashtami (13 Oct)</option>
-                <option value={4}>Day 4: Maha Navami (14 Oct)</option>
-                <option value={5}>Day 5: Bijoya Dashami (15 Oct)</option>
-                <option value={6}>Day 6: Red Road Carnival (16 Oct)</option>
-                <option value={7}>Day 7: Immersion Ghats (17 Oct)</option>
-                <option value={8}>Day 8: Kojagari Lakshmi Puja (18 Oct)</option>
-                <option value={9}>Day 9: Grand Retrospective (19 Oct)</option>
-                <option value={10}>Day 10: Golden Pujo Gala (20 Oct)</option>
+                <option value={1}>Day 1: Pratipada (11 Oct) - Concluded</option>
+                <option value={2}>Day 2: Dwitiya (12 Oct) - Concluded</option>
+                <option value={3}>Day 3: Tritiya (13 Oct) - Live Active Today</option>
+                <option value={4}>Day 4: Chaturthi (14 Oct)</option>
+                <option value={5}>Day 5: Panchami (15 Oct)</option>
+                <option value={6}>Day 6: Sashthi (16 Oct)</option>
+                <option value={7}>Day 7: Saptami (17 Oct)</option>
+                <option value={8}>Day 8: Ashtami (18 Oct)</option>
+                <option value={9}>Day 9: Navami (19 Oct)</option>
+                <option value={10}>Day 10: Vijayadashami (20 Oct)</option>
               </select>
             </div>
           </div>

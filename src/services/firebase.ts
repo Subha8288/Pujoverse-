@@ -4,7 +4,7 @@ import {
   getFirestore,
   collection,
   doc,
-  getDocFromServer,
+  getDoc,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -14,7 +14,7 @@ import {
   limit,
   serverTimestamp
 } from 'firebase/firestore';
-import { PhotoEntry, PandalLandmark, ChatMessage, UserProfile } from '../types/contest';
+import { PhotoEntry, PandalLandmark, ChatMessage, UserProfile, VideoEntry } from '../types/contest';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App
@@ -25,13 +25,13 @@ const firestoreDbId =
     ? firebaseConfig.firestoreDatabaseId
     : undefined;
 
-// Initialize Firestore with experimentalForceLongPolling to ensure seamless connectivity across iframes & proxies
+// Initialize Firestore with auto-detect long polling for optimal connection in iframes & browsers
 export const db = (() => {
   try {
     return initializeFirestore(
       app,
       {
-        experimentalForceLongPolling: true,
+        experimentalAutoDetectLongPolling: true,
       },
       firestoreDbId
     );
@@ -41,32 +41,41 @@ export const db = (() => {
 })();
 
 // Connectivity state tracker
-let isCloudConnected = false;
+let isCloudConnected = true;
 export const getIsCloudConnected = () => isCloudConnected;
 
-// Mandatory boot connection test per Firebase skill guidelines with graceful timeout guard
+// Non-blocking gentle connection check that avoids throwing code=unavailable errors
 async function testConnection() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    isCloudConnected = false;
+    return;
+  }
   try {
-    const checkPromise = getDocFromServer(doc(db, 'test', 'connection'));
+    // Gentle probe with timeout that doesn't force a cold server lock
+    const checkPromise = getDoc(doc(db, 'test', 'connection'));
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Connection check timeout')), 4000)
+      setTimeout(() => reject(new Error('Connection check timeout')), 3000)
     );
     await Promise.race([checkPromise, timeoutPromise]);
     isCloudConnected = true;
-    console.log('[PujoVerse Firebase] Connected successfully to Cloud Firestore.');
-  } catch (error) {
+  } catch {
+    // Offline-first fallback: Firestore operates seamlessly with local cache
     isCloudConnected = false;
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('[PujoVerse Firebase] Offline mode active: client will use local cache.');
-    } else {
-      console.info('[PujoVerse Firebase] Cloud Firestore initialized with resilient offline-first fallback.');
-    }
   }
 }
-testConnection();
+
+if (typeof window !== 'undefined') {
+  // Run connection check in next microtask to let Firestore finish initialization
+  setTimeout(testConnection, 500);
+  window.addEventListener('online', testConnection);
+  window.addEventListener('offline', () => {
+    isCloudConnected = false;
+  });
+}
 
 // Collection References
 const PHOTOS_COLLECTION = 'photos';
+const VIDEOS_COLLECTION = 'videos';
 const PANDALS_COLLECTION = 'pandals';
 const MESSAGES_COLLECTION = 'messages';
 const USERS_COLLECTION = 'users';
@@ -141,6 +150,74 @@ export const FirebaseService = {
       return true;
     } catch (err) {
       console.error('[PujoVerse Firebase] Error deleting photo:', err);
+      return false;
+    }
+  },
+
+  // Real-time listener for videos
+  subscribeToVideos(onUpdate: (videos: VideoEntry[]) => void) {
+    try {
+      const q = query(collection(db, VIDEOS_COLLECTION), orderBy('createdAt', 'desc'), limit(100));
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const list: VideoEntry[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              list.push({
+                ...data,
+                id: docSnap.id
+              } as VideoEntry);
+            });
+            onUpdate(list);
+          }
+        },
+        (err) => {
+          console.warn('[PujoVerse Firebase] Videos listener fallback:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('[PujoVerse Firebase] Videos subscription failed:', err);
+      return () => {};
+    }
+  },
+
+  async saveVideo(video: VideoEntry) {
+    try {
+      const docRef = doc(db, VIDEOS_COLLECTION, video.id);
+      await setDoc(docRef, {
+        ...video,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.error('[PujoVerse Firebase] Error saving video:', err);
+      return false;
+    }
+  },
+
+  async updateVideo(videoId: string, updates: Partial<VideoEntry>) {
+    try {
+      const docRef = doc(db, VIDEOS_COLLECTION, videoId);
+      await updateDoc(docRef, {
+        ...updates,
+        updatedAt: serverTimestamp()
+      });
+      return true;
+    } catch (err) {
+      console.error('[PujoVerse Firebase] Error updating video:', err);
+      return false;
+    }
+  },
+
+  async deleteVideo(videoId: string) {
+    try {
+      const docRef = doc(db, VIDEOS_COLLECTION, videoId);
+      await deleteDoc(docRef);
+      return true;
+    } catch (err) {
+      console.error('[PujoVerse Firebase] Error deleting video:', err);
       return false;
     }
   },
@@ -244,6 +321,17 @@ export const FirebaseService = {
       return true;
     } catch (err) {
       console.error('[PujoVerse Firebase] Error syncing user profile:', err);
+      return false;
+    }
+  },
+
+  async deleteUserProfile(userId: string) {
+    try {
+      const docRef = doc(db, USERS_COLLECTION, userId);
+      await deleteDoc(docRef);
+      return true;
+    } catch (err) {
+      console.warn('[PujoVerse Firebase] Error removing user profile from cloud:', err);
       return false;
     }
   }

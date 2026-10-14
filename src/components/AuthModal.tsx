@@ -1,19 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile } from '../types/contest';
 import { StorageService } from '../services/storage';
+import { POPULAR_PANDALS_DATA } from '../data/pandals';
+import { DurgaMascotLogo } from './DurgaMascotLogo';
 import {
   X,
-  User,
-  Check,
-  UserPlus,
-  Users,
-  Upload,
-  Camera,
   Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  User,
+  Camera,
+  Upload,
   Crown,
-  KeyRound,
+  CheckCircle2,
+  AlertCircle,
   ShieldCheck,
-  Settings
+  ChevronRight,
+  Trash2,
+  Sparkles,
+  MapPin,
+  Check
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -24,6 +31,7 @@ interface AuthModalProps {
   onSelectUser: (user: UserProfile) => void;
   onCreateUser: (user: UserProfile) => void;
   onSignInWithEmail?: (email: string, password?: string, name?: string) => void;
+  onDeleteUser?: (userId: string) => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -33,44 +41,67 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   allUsers,
   onSelectUser,
   onCreateUser,
-  onSignInWithEmail
+  onSignInWithEmail,
+  onDeleteUser
 }) => {
-  const [mode, setMode] = useState<'switch' | 'email' | 'new'>('switch');
+  // Primary Authentication Mode: 'login' | 'signup'
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [showSavedProfiles, setShowSavedProfiles] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [localProfiles, setLocalProfiles] = useState<UserProfile[]>(allUsers);
 
-  // Form states for New Profile
-  const [name, setName] = useState('');
-  const [instagramHandle, setInstagramHandle] = useState('');
-  const [email, setEmail] = useState('');
-  const [bio, setBio] = useState('');
-  const [city, setCity] = useState('Kolkata');
-  const [favoritePandal, setFavoritePandal] = useState('Bagbazar Sarbojanin');
-  const [avatar, setAvatar] = useState(
+  // Sync with prop updates
+  useEffect(() => {
+    setLocalProfiles(allUsers);
+  }, [allUsers]);
+
+  const durgaPhoto = StorageService.getDurgaPhoto();
+
+  // LOGIN STATE
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [showForgotPasswordTip, setShowForgotPasswordTip] = useState(false);
+
+  // SIGN UP STATE
+  const [signupName, setSignupName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [signupCity, setSignupCity] = useState('Kolkata');
+  const [signupDistrict, setSignupDistrict] = useState('Kolkata');
+  const [signupPandal, setSignupPandal] = useState('Bagbazar Sarbojanin Durgotsav');
+  const [signupPandalLocation, setSignupPandalLocation] = useState('Bagbazar Ghat Road, North Kolkata');
+  const [signupInsta, setSignupInsta] = useState('');
+  const [signupAvatar, setSignupAvatar] = useState(
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'
   );
   const [isCustomDp, setIsCustomDp] = useState(false);
+  const [certifyHuman, setCertifyHuman] = useState(true);
 
-  // Email Sign In state
-  const [inputEmail, setInputEmail] = useState('');
-  const [inputPassword, setInputPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [inputName, setInputName] = useState('');
+  // FEEDBACK STATE
   const [authError, setAuthError] = useState('');
-  const [rulerEmail, setRulerEmailState] = useState(StorageService.getRulerEmail());
-  const [isEditingRulerEmail, setIsEditingRulerEmail] = useState(false);
-  const [customRulerEmailInput, setCustomRulerEmailInput] = useState(rulerEmail);
+  const [authSuccess, setAuthSuccess] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const rulerEmail = StorageService.getRulerEmail();
+  const rulerPassword = StorageService.getRulerPassword();
+  const isRulerEmailInput = StorageService.isRulerEmail(loginEmail.trim().toLowerCase());
+
   useEffect(() => {
     if (isOpen) {
-      setRulerEmailState(StorageService.getRulerEmail());
-      setCustomRulerEmailInput(StorageService.getRulerEmail());
       setAuthError('');
+      setAuthSuccess('');
+      setShowForgotPasswordTip(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
+  // Handle Photo / DP upload
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -78,25 +109,103 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        setAvatar(reader.result);
+        setSignupAvatar(reader.result);
         setIsCustomDp(true);
       }
     };
     reader.readAsDataURL(file);
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  // Quick fill organizer ruler credentials
+  const handleQuickFillRuler = () => {
+    setAuthMode('login');
+    setLoginEmail(rulerEmail);
+    setLoginPassword(rulerPassword);
+    setAuthError('');
+  };
+
+  // Password Strength Calculator
+  const getPasswordStrength = (pwd: string) => {
+    if (!pwd) return { score: 0, text: '', color: 'bg-slate-700' };
+    if (pwd.length < 6) return { score: 1, text: 'Too short (min 6)', color: 'bg-rose-500' };
+    if (pwd.length < 8 || !/\d/.test(pwd)) return { score: 2, text: 'Medium', color: 'bg-amber-400' };
+    return { score: 3, text: 'Strong', color: 'bg-emerald-500' };
+  };
+
+  const pwdStrength = getPasswordStrength(signupPassword);
+
+  // SUBMIT: LOGIN
+  const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    setAuthError('');
+    setAuthSuccess('');
 
-    const formattedInsta = instagramHandle.trim().startsWith('@')
-      ? instagramHandle.trim()
-      : instagramHandle.trim()
-      ? `@${instagramHandle.trim()}`
-      : undefined;
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setAuthError('Please enter your email address.');
+      return;
+    }
 
-    const cleanEmail = email.trim().toLowerCase();
     const isRuler = StorageService.isRulerEmail(cleanEmail);
+    if (isRuler) {
+      const requiredPassword = StorageService.getRulerPassword();
+      if (!loginPassword || loginPassword.trim() !== requiredPassword) {
+        setAuthError('Incorrect password for Ruler administrative account. Access restricted to the Ruler.');
+        return;
+      }
+    }
+
+    try {
+      if (onSignInWithEmail) {
+        onSignInWithEmail(cleanEmail, loginPassword.trim() || undefined);
+      } else {
+        const user = StorageService.signInWithEmail(cleanEmail, loginPassword.trim() || undefined);
+        onSelectUser(user);
+      }
+      onClose();
+    } catch (err: any) {
+      setAuthError(err.message || 'Login failed. Please verify credentials.');
+    }
+  };
+
+  // SUBMIT: SIGN UP
+  const handleSignupSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+
+    if (!signupName.trim()) {
+      setAuthError('Please enter your full name.');
+      return;
+    }
+
+    const cleanEmail = signupEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setAuthError('Please enter a valid email address.');
+      return;
+    }
+
+    if (signupPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (signupPassword !== signupConfirmPassword) {
+      setAuthError('Passwords do not match. Please re-enter.');
+      return;
+    }
+
+    if (!certifyHuman) {
+      setAuthError('You must agree to the human player integrity certification.');
+      return;
+    }
+
+    const isRuler = StorageService.isRulerEmail(cleanEmail);
+    const formattedInsta = signupInsta.trim().startsWith('@')
+      ? signupInsta.trim()
+      : signupInsta.trim()
+      ? `@${signupInsta.trim()}`
+      : undefined;
 
     const badges = ['Verified Real Player', 'PujoVerse Creator', isCustomDp ? 'Custom DP' : 'Community Member'];
     if (isRuler) {
@@ -105,13 +214,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const newUser: UserProfile = {
       id: `usr-${Date.now()}`,
-      name: name.trim(),
+      name: signupName.trim(),
       instagramHandle: formattedInsta,
-      email: cleanEmail || undefined,
-      avatar,
-      bio: bio.trim() || 'Festival photographer capturing the beauty of Durga Puja.',
-      city: city.trim() || 'Kolkata',
-      favoritePandal: favoritePandal.trim() || 'Bagbazar Sarbojanin Durgotsav',
+      email: cleanEmail,
+      avatar: signupAvatar,
+      bio: 'Festival photographer capturing the beauty of Durga Puja.',
+      district: signupDistrict.trim() || 'Kolkata',
+      city: signupCity.trim() || 'Kolkata',
+      favoritePandal: signupPandal.trim() || 'Bagbazar Sarbojanin Durgotsav',
+      favoritePandalLocation: signupPandalLocation.trim() || `${signupCity.trim()}, ${signupDistrict.trim()}`,
       isVerifiedHuman: true,
       role: isRuler ? 'owner' : 'creator',
       isOwner: isRuler,
@@ -119,6 +230,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       votedCount: 0,
       submissionsCount: 0,
       uploadedPhotoIds: [],
+      uploadedVideoIds: [],
       createdAt: new Date().toISOString().split('T')[0]
     };
 
@@ -126,357 +238,253 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     onClose();
   };
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    const cleanEmail = inputEmail.trim().toLowerCase();
-    if (!cleanEmail) {
-      setAuthError('Please enter an email address.');
-      return;
-    }
-
-    const isRuler = StorageService.isRulerEmail(cleanEmail);
-    if (isRuler) {
-      const requiredPassword = StorageService.getRulerPassword();
-      if (!inputPassword || inputPassword.trim() !== requiredPassword) {
-        setAuthError('Incorrect password for Ruler account. Password is required (subho@123).');
-        return;
-      }
-    }
-
-    try {
-      if (onSignInWithEmail) {
-        onSignInWithEmail(cleanEmail, inputPassword.trim() || undefined, inputName.trim() || undefined);
-      } else {
-        const user = StorageService.signInWithEmail(cleanEmail, inputPassword.trim() || undefined, inputName.trim() || undefined);
-        onSelectUser(user);
-      }
-      onClose();
-    } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed. Please check credentials.');
-    }
-  };
-
-  const handleAutofillRuler = () => {
-    const rEmail = StorageService.getRulerEmail();
-    const rPwd = StorageService.getRulerPassword();
-    setInputEmail(rEmail);
-    setInputPassword(rPwd);
-    setInputName('Subhajit Mishra');
-    setAuthError('');
-  };
-
-  const handleSaveCustomRulerEmail = () => {
-    if (!customRulerEmailInput.trim()) return;
-    StorageService.setRulerEmail(customRulerEmailInput.trim());
-    setRulerEmailState(StorageService.getRulerEmail());
-    setIsEditingRulerEmail(false);
-  };
-
-  const isCurrentInputRuler = StorageService.isRulerEmail(inputEmail.trim().toLowerCase());
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-md bg-[#141624] rounded-2xl border border-white/10 shadow-2xl p-5 sm:p-6 text-slate-100 max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg bg-[#111322] rounded-3xl border border-amber-500/25 shadow-[0_0_60px_rgba(0,0,0,0.85)] p-5 sm:p-7 text-slate-100 max-h-[94vh] overflow-y-auto">
+        {/* Festive Marigold Garland Header Bar */}
+        <div className="flex items-center justify-center gap-1.5 mb-3 text-xs select-none">
+          <span className="text-amber-400">🌼</span>
+          <span className="text-rose-500">🌺</span>
+          <span className="text-amber-400">🌼</span>
+          <span className="text-rose-500">🌺</span>
+          <span className="text-amber-400">🌼</span>
+        </div>
+
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <User className="w-5 h-5 text-amber-400" />
-            <h3 className="text-base font-bold font-display text-white">
-              PujoVerse Account & Sign In
-            </h3>
+        <div className="flex items-start justify-between pb-3.5 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="relative shrink-0">
+              <DurgaMascotLogo
+                size={42}
+                showHalo={true}
+                customImageUrl={durgaPhoto && durgaPhoto !== 'mascot' ? durgaPhoto : undefined}
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-black font-display text-white tracking-tight">
+                  PujoVerse
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 font-mono text-[10px] font-bold">
+                  Authentication
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                শারদোৎসব লগইন · Kolkata & West Bengal Photography Arena
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg border border-white/10 text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-xl border border-white/10 hover:border-white/20 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            title="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab switcher: Switch vs Sign In with Email vs New */}
-        <div className="grid grid-cols-3 gap-1 p-1 bg-[#0f111a] rounded-xl my-4 text-xs font-semibold">
+        {/* Professional Segmented Navigation Tabs: [ Log In ] vs [ Sign Up ] */}
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0b0c14] rounded-2xl my-4 text-xs font-bold border border-white/5">
           <button
             type="button"
             onClick={() => {
-              setMode('switch');
+              setAuthMode('login');
               setAuthError('');
             }}
-            className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
-              mode === 'switch'
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+            className={`py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              authMode === 'login'
+                ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md font-extrabold'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
-            <span>Profiles</span>
+            <Lock className="w-3.5 h-3.5" />
+            <span>Log In</span>
           </button>
 
           <button
             type="button"
             onClick={() => {
-              setMode('email');
+              setAuthMode('signup');
               setAuthError('');
             }}
-            className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
-              mode === 'email'
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+            className={`py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              authMode === 'signup'
+                ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md font-extrabold'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Mail className="w-3.5 h-3.5" />
-            <span>Email Sign In</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setMode('new');
-              setAuthError('');
-            }}
-            className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
-              mode === 'new'
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>New Profile</span>
+            <User className="w-3.5 h-3.5" />
+            <span>Sign Up</span>
           </button>
         </div>
 
-        {/* TAB 1: SWITCH PROFILE */}
-        {mode === 'switch' && (
-          <div className="space-y-3">
-            <div className="text-xs text-slate-400">
-              Profiles available on this browser:
-            </div>
-
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {allUsers.map((u) => {
-                const isActive = u.id === currentUser.id;
-
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => {
-                      if (u.isOwner && !currentUser.isOwner) {
-                        // Switch to email tab to require ruler password
-                        setInputEmail(u.email || StorageService.getRulerEmail());
-                        setMode('email');
-                        setAuthError('Please enter password (subho@123) to access the Ruler account.');
-                        return;
-                      }
-                      onSelectUser(u);
-                      onClose();
-                    }}
-                    className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                      isActive
-                        ? 'bg-amber-500/15 border-amber-400/80 ring-1 ring-amber-400/40'
-                        : 'bg-white/[0.03] border-white/5 hover:border-white/20'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <img
-                          src={u.avatar}
-                          alt={u.name}
-                          className="w-10 h-10 rounded-full object-cover border border-amber-400/60"
-                        />
-                        {u.isOwner && (
-                          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-[9px] font-bold">
-                            👑
-                          </span>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-white font-display">
-                            {u.name}
-                          </span>
-                          {isActive && (
-                            <span className="px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px] font-bold font-mono">
-                              Active
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
-                          {u.email && <span className="font-mono text-[11px] text-slate-400">{u.email}</span>}
-                          {u.instagramHandle && (
-                            <span className="text-rose-400 font-mono text-[11px]">{u.instagramHandle}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      {isActive ? (
-                        <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-500">
-                          {u.isOwner ? 'Unlock 👑' : 'Switch'}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="pt-2 text-center">
-              <button
-                type="button"
-                onClick={() => setMode('email')}
-                className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
-              >
-                Sign in with specific email & password →
-              </button>
-            </div>
+        {/* Global Error Banner */}
+        {authError && (
+          <div className="mb-4 p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">{authError}</div>
           </div>
         )}
 
-        {/* TAB 2: SIGN IN WITH EMAIL & PASSWORD */}
-        {mode === 'email' && (
-          <form onSubmit={handleEmailSubmit} className="space-y-3.5">
-            <div className="text-xs text-slate-300 leading-relaxed">
-              Sign in with your email and password. Logging in with ruler credentials unlocks the Ruler Console and full edit access.
-            </div>
-
-            {authError && (
-              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
-                <span>{authError}</span>
-              </div>
-            )}
-
+        {/* ==================== TAB 1: PROFESSIONAL LOGIN ==================== */}
+        {authMode === 'login' && (
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-200 mb-1">
-                Your Email Address *
+              <label className="block text-xs font-bold text-slate-200 mb-1.5">
+                Email Address or Username <span className="text-amber-400">*</span>
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
-                  type="email"
+                  type="text"
                   required
-                  value={inputEmail}
+                  value={loginEmail}
                   onChange={(e) => {
-                    setInputEmail(e.target.value);
+                    setLoginEmail(e.target.value);
                     setAuthError('');
                   }}
-                  placeholder="e.g. subhajitmishra8984@gmail.com"
-                  className="w-full bg-[#10121a] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                  placeholder="subho@gmail.com or Subho"
+                  className="w-full bg-[#0a0b12] border border-white/10 focus:border-amber-400 rounded-xl pl-10 pr-3.5 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
                 />
               </div>
+              <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                Enter your email (e.g. subho@gmail.com) or registered profile name.
+              </p>
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-bold text-slate-200">
-                  Password {isCurrentInputRuler ? '(Required for Ruler)' : '(Optional for normal players)'}
+                  Password <span className="text-amber-400">*</span>
                 </label>
                 <button
                   type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="text-[10px] text-slate-400 hover:text-amber-300"
+                  onClick={() => setShowForgotPasswordTip((prev) => !prev)}
+                  className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"
                 >
-                  {showPassword ? 'Hide' : 'Show'}
+                  Forgot Password?
                 </button>
               </div>
+
               <div className="relative">
-                <KeyRound className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={inputPassword}
+                  type={showLoginPassword ? 'text' : 'password'}
+                  required={isRulerEmailInput}
+                  value={loginPassword}
                   onChange={(e) => {
-                    setInputPassword(e.target.value);
+                    setLoginPassword(e.target.value);
                     setAuthError('');
                   }}
-                  placeholder={isCurrentInputRuler ? 'Enter ruler password (subho@123)' : 'Enter password'}
-                  className="w-full bg-[#10121a] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+                  placeholder={isRulerEmailInput ? 'Enter ruler password (subho@123)' : 'Enter password'}
+                  className="w-full bg-[#0a0b12] border border-white/10 focus:border-amber-400 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword((prev) => !prev)}
+                  className="absolute right-3.5 top-3 text-slate-400 hover:text-white cursor-pointer"
+                  title={showLoginPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
+
+              {/* Forgot Password Helper Box */}
+              {showForgotPasswordTip && (
+                <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Password Assistance:</span>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed">
+                    If you forgot your password, contact the festival administrator or register a new profile on this device. Ruler administrative access requires authorized master credentials.
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Display Name (Optional)
+            {/* Remember Me Row */}
+            <div className="flex items-center justify-between gap-2 pt-1 text-xs text-slate-400">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-white/20 bg-white/5 text-amber-400 focus:ring-0 cursor-pointer"
+                />
+                <span>Remember me on this device</span>
               </label>
-              <input
-                type="text"
-                value={inputName}
-                onChange={(e) => setInputName(e.target.value)}
-                placeholder="e.g. Subhajit Mishra"
-                className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
-              />
             </div>
 
-            {/* Live Feedback when matching designated ruler email */}
-            {isCurrentInputRuler && (
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-400/40 flex items-center gap-2.5 text-xs text-amber-300">
+            {/* Ruler Account Recognized Banner */}
+            {isRulerEmailInput && (
+              <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center gap-2.5 text-xs text-amber-300">
                 <Crown className="w-4 h-4 text-amber-400 shrink-0" />
                 <div>
-                  <span className="font-bold block text-white">Ruler Account Identified</span>
+                  <span className="font-bold block text-white">Ruler Administrative Account</span>
                   <span className="text-[11px] text-amber-200/90">
-                    Signing in with password <strong className="font-mono text-amber-300">subho@123</strong> will grant full Ruler powers (edit photo names, details, landmarks, festival days).
+                    Entering the ruler password will unlock the Ruler Console & curation authority.
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Quick Helper for Subhajit */}
-            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between text-xs text-slate-400">
-              <span className="text-[11px]">Ruler: subhajitmishra8984@gmail.com</span>
+            {/* Primary Login Button */}
+            <div className="pt-2">
               <button
-                type="button"
-                onClick={handleAutofillRuler}
-                className="px-2.5 py-1 rounded bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 font-bold text-[11px] transition-colors flex items-center gap-1"
+                type="submit"
+                disabled={!loginEmail.trim()}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 hover:brightness-110 active:scale-95 text-slate-950 font-black text-sm tracking-wide shadow-lg shadow-amber-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
-                <KeyRound className="w-3 h-3" />
-                <span>Autofill Ruler</span>
+                {isRulerEmailInput ? (
+                  <>
+                    <Crown className="w-4 h-4 text-slate-950" />
+                    <span>👑 Log In as Ruler</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-4 h-4 text-slate-950" />
+                    <span>Log In to PujoVerse</span>
+                  </>
+                )}
               </button>
             </div>
 
-            <div className="pt-2 flex items-center justify-end gap-2">
+            {/* Switch to Sign Up */}
+            <p className="text-center text-xs text-slate-400 pt-1">
+              Don't have an account?{' '}
               <button
                 type="button"
-                onClick={() => setMode('switch')}
-                className="px-3.5 py-2 text-xs text-slate-400 hover:text-white"
+                onClick={() => {
+                  setAuthMode('signup');
+                  setAuthError('');
+                }}
+                className="text-amber-400 font-bold hover:underline cursor-pointer"
               >
-                Back
+                Sign Up for PujoVerse
               </button>
-              <button
-                type="submit"
-                disabled={!inputEmail.trim()}
-                className="px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-all shadow-md shadow-amber-500/20 disabled:opacity-50"
-              >
-                {isCurrentInputRuler ? '👑 Sign In as Ruler' : 'Sign In / Continue'}
-              </button>
-            </div>
+            </p>
           </form>
         )}
 
-        {/* TAB 3: CREATE NEW PROFILE */}
-        {mode === 'new' && (
-          <form onSubmit={handleCreate} className="space-y-4">
-            {/* Avatar Preview & Upload */}
-            <div className="flex items-center gap-4">
-              <div className="relative">
+        {/* ==================== TAB 2: PROFESSIONAL SIGN UP ==================== */}
+        {authMode === 'signup' && (
+          <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+            {/* Avatar / DP Upload Header */}
+            <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-[#0b0c14] border border-white/5">
+              <div className="relative shrink-0">
                 <img
-                  src={avatar}
+                  src={signupAvatar}
                   alt="DP Preview"
-                  className="w-16 h-16 rounded-full object-cover border-2 border-amber-400 shadow-md"
+                  className="w-14 h-14 rounded-full object-cover border-2 border-amber-400 shadow-md"
                 />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="absolute bottom-0 right-0 p-1.5 rounded-full bg-amber-400 text-slate-950 shadow hover:bg-amber-300 transition-colors"
-                  title="Upload Custom DP"
+                  className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-amber-400 text-slate-950 shadow hover:bg-amber-300 transition-colors cursor-pointer"
+                  title="Upload Custom Photo / DP"
                 >
-                  <Camera className="w-3.5 h-3.5" />
+                  <Camera className="w-3 h-3 stroke-[2.5]" />
                 </button>
                 <input
                   type="file"
@@ -487,115 +495,326 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 />
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1.5"
+                  className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1.5 cursor-pointer"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Personal Photo / DP</span>
+                  <span>Upload Profile Photo / DP</span>
                 </button>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Real photos help authenticate human photographer profiles.
+                <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                  Personal photos help authenticate real human Kolkata & Bengal photographers.
                 </p>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-200 mb-1">
-                Your Full Name *
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Subir Karmakar"
-                className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+            {/* Full Name & Email Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-200 mb-1">
-                  Instagram Handle
+                <label className="block text-xs font-bold text-slate-200 mb-1">
+                  Full Name <span className="text-amber-400">*</span>
                 </label>
                 <input
                   type="text"
-                  value={instagramHandle}
-                  onChange={(e) => setInstagramHandle(e.target.value)}
-                  placeholder="@yourhandle"
-                  className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                  required
+                  value={signupName}
+                  onChange={(e) => setSignupName(e.target.value)}
+                  placeholder="Subho"
+                  className="w-full bg-[#0a0b12] border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
                 />
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-200 mb-1">
-                  Email Address
+                <label className="block text-xs font-bold text-slate-200 mb-1">
+                  Email Address <span className="text-amber-400">*</span>
                 </label>
                 <input
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
+                  required
+                  value={signupEmail}
+                  onChange={(e) => setSignupEmail(e.target.value)}
+                  placeholder="subho@gmail.com"
+                  className="w-full bg-[#0a0b12] border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
                 />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  e.g. subho@gmail.com
+                </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* Password & Confirm Password Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-200 mb-1">City</label>
-                <input
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Kolkata"
-                  className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-200">
+                    Password <span className="text-amber-400">*</span>
+                  </label>
+                  {signupPassword && (
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {pwdStrength.text}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type={showSignupPassword ? 'text' : 'password'}
+                    required
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    placeholder="Min 6 characters"
+                    className="w-full bg-[#0a0b12] border border-white/10 focus:border-amber-400 rounded-xl px-3 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignupPassword((prev) => !prev)}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    {showSignupPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-200 mb-1">
-                  Favorite Pandal
+                <label className="block text-xs font-bold text-slate-200 mb-1">
+                  Confirm Password <span className="text-amber-400">*</span>
                 </label>
                 <input
-                  type="text"
-                  value={favoritePandal}
-                  onChange={(e) => setFavoritePandal(e.target.value)}
-                  placeholder="Bagbazar Sarbojanin"
-                  className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
+                  type={showSignupPassword ? 'text' : 'password'}
+                  required
+                  value={signupConfirmPassword}
+                  onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                  placeholder="Re-enter password"
+                  className={`w-full bg-[#0a0b12] border rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors ${
+                    signupConfirmPassword && signupConfirmPassword !== signupPassword
+                      ? 'border-rose-500'
+                      : 'border-white/10 focus:border-amber-400'
+                  }`}
                 />
               </div>
             </div>
 
+            {/* Location note: location is entered when uploading photo/video */}
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/90 flex items-start gap-2.5">
+              <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-bold text-amber-300">Pandal & Location:</span> You will easily enter your pandal name, district, and location whenever you upload your photos and videos!
+              </div>
+            </div>
+
+            {/* Instagram Handle (Optional) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-200 mb-1">Bio / Story</label>
-              <textarea
-                rows={2}
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                placeholder="Brief intro about your photography style..."
-                className="w-full bg-[#10121a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Instagram Handle <span className="text-slate-500">(Optional for photo credit)</span>
+              </label>
+              <input
+                type="text"
+                value={signupInsta}
+                onChange={(e) => setSignupInsta(e.target.value)}
+                placeholder="@subho"
+                className="w-full bg-[#0a0b12] border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-mono transition-colors"
               />
             </div>
 
-            <div className="pt-2 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setMode('switch')}
-                className="px-3.5 py-2 text-xs text-slate-400 hover:text-white"
-              >
-                Back
-              </button>
+            {/* 100% Real Human Player Certification Checkbox */}
+            <div className="pt-1">
+              <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  required
+                  checked={certifyHuman}
+                  onChange={(e) => setCertifyHuman(e.target.checked)}
+                  className="mt-0.5 rounded border-white/20 bg-white/5 text-amber-400 focus:ring-0 cursor-pointer"
+                />
+                <span className="leading-snug">
+                  <span className="font-bold text-amber-300">100% Real Human Player Guarantee:</span>{' '}
+                  I certify I will submit genuine photography and abide by community judging rules.
+                </span>
+              </label>
+            </div>
+
+            {/* Primary Signup Button */}
+            <div className="pt-2">
               <button
                 type="submit"
-                disabled={!name.trim()}
-                className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-all shadow-md shadow-amber-500/20 disabled:opacity-50"
+                disabled={!signupName.trim() || !signupEmail.trim() || signupPassword.length < 6}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 hover:brightness-110 active:scale-95 text-slate-950 font-black text-sm tracking-wide shadow-lg shadow-amber-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
-                Create Profile & Enter
+                <Sparkles className="w-4 h-4 text-slate-950" />
+                <span>Create Account & Join Arena</span>
               </button>
             </div>
+
+            {/* Switch to Login */}
+            <p className="text-center text-xs text-slate-400 pt-1">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError('');
+                }}
+                className="text-amber-400 font-bold hover:underline cursor-pointer"
+              >
+                Log In
+              </button>
+            </p>
           </form>
+        )}
+
+        {/* ==================== SAVED PROFILES ON THIS DEVICE ==================== */}
+        {localProfiles.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-white/10">
+            <button
+              type="button"
+              onClick={() => setShowSavedProfiles((prev) => !prev)}
+              className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-white transition-colors cursor-pointer select-none"
+            >
+              <span className="flex items-center gap-1.5 font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>Saved Profiles on this Device ({localProfiles.length})</span>
+              </span>
+              <span className="text-[11px] text-amber-400">
+                {showSavedProfiles ? 'Hide Profiles ▲' : 'Show Profiles ▼'}
+              </span>
+            </button>
+
+            {showSavedProfiles && (
+              <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1 animate-in fade-in duration-150">
+                {localProfiles.map((u) => {
+                  const isActive = u.id === currentUser.id;
+
+                  return (
+                    <div
+                      key={u.id}
+                      className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition-all ${
+                        isActive
+                          ? 'bg-amber-500/15 border-amber-400/80 ring-1 ring-amber-400/40'
+                          : 'bg-white/[0.02] border-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <div
+                        onClick={() => {
+                          if (u.isOwner && !currentUser.isOwner) {
+                            setLoginEmail(u.email || rulerEmail);
+                            setAuthMode('login');
+                            setAuthError('Please enter the Ruler password to unlock this administrator account.');
+                            return;
+                          }
+                          onSelectUser(u);
+                          onClose();
+                        }}
+                        className="flex-1 flex items-center gap-2.5 cursor-pointer min-w-0 pr-2"
+                      >
+                        <div className="relative shrink-0">
+                          <img
+                            src={u.avatar}
+                            alt={u.name}
+                            className="w-8 h-8 rounded-full object-cover border border-amber-400/60"
+                          />
+                          {u.isOwner && (
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-[8px] font-black">
+                              👑
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-white truncate">{u.name}</span>
+                            {isActive && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-bold font-mono">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 truncate font-mono">
+                            {u.email || u.instagramHandle}
+                          </div>
+                          {(u.city || u.favoritePandal) && (
+                            <div className="text-[10px] text-amber-300/80 truncate flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                              <span className="truncate">{u.city}{u.district ? ` (${u.district})` : ''} · {u.favoritePandal}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {onDeleteUser && (
+                          deletingUserId === u.id ? (
+                            <div
+                              className="flex items-center gap-1 bg-[#1a1c2a] p-1 rounded-lg border border-rose-500/40"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLocalProfiles((prev) => prev.filter((item) => item.id !== u.id));
+                                  if (onDeleteUser) {
+                                    onDeleteUser(u.id);
+                                  }
+                                  setDeletingUserId(null);
+                                }}
+                                className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeletingUserId(null);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[10px] cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingUserId(u.id);
+                              }}
+                              title={`Delete profile "${u.name}"`}
+                              className="p-1 rounded-lg border border-white/5 hover:border-rose-500/40 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (u.isOwner && !currentUser.isOwner) {
+                              setLoginEmail(u.email || rulerEmail);
+                              setAuthMode('login');
+                              setAuthError('Please enter the Ruler password to unlock this administrator account.');
+                              return;
+                            }
+                            onSelectUser(u);
+                            onClose();
+                          }}
+                          className="px-2 py-1 rounded-lg text-xs font-semibold text-amber-400 hover:text-white cursor-pointer"
+                        >
+                          {isActive ? (
+                            <Check className="w-4 h-4 text-amber-400" />
+                          ) : (
+                            <span>{u.isOwner ? 'Unlock 👑' : 'Switch'}</span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

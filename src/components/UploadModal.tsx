@@ -1,13 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { PhotoEntry, UserProfile, PandalLandmark } from '../types/contest';
+import { PhotoEntry, VideoEntry, UserProfile, PandalLandmark } from '../types/contest';
 import { StorageService } from '../services/storage';
-import { POPULAR_PANDALS_DATA, PANDAL_ZONES } from '../data/pandals';
-import { X, Upload, Camera, MapPin, Sparkles, AlertCircle, Plus, Search, Check, Clock, ShieldCheck, UserCheck } from 'lucide-react';
+import { POPULAR_PANDALS_DATA } from '../data/pandals';
+import {
+  X,
+  Upload,
+  Camera,
+  Film,
+  MapPin,
+  Sparkles,
+  Link as LinkIcon,
+  CheckCircle2
+} from 'lucide-react';
 
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (newEntry: Omit<PhotoEntry, 'id' | 'votes' | 'wins' | 'matchups' | 'timestamp'>) => void;
+  onSubmitVideo?: (newEntry: Omit<VideoEntry, 'id' | 'votes' | 'wins' | 'matchups' | 'timestamp'>) => void;
+  initialType?: 'photo' | 'video';
   currentDayNumber: number;
   currentUser: UserProfile;
   isPast11PM?: boolean;
@@ -17,520 +28,586 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
+  onSubmitVideo,
+  initialType = 'photo',
   currentDayNumber,
   currentUser,
   isPast11PM
 }) => {
+  const [entryType, setEntryType] = useState<'photo' | 'video'>(initialType);
   const [dayNumber, setDayNumber] = useState(currentDayNumber);
   const [title, setTitle] = useState('');
-  const [caption, setCaption] = useState('');
 
-  // Pandal & Landmark State
-  const [selectedZone, setSelectedZone] = useState<string>('All Zones');
-  const [pandalSearch, setPandalSearch] = useState('');
-  const [selectedPandalName, setSelectedPandalName] = useState(POPULAR_PANDALS_DATA[0].name);
-  const [isAddingCustomPandal, setIsAddingCustomPandal] = useState(false);
-  const [customPandalInput, setCustomPandalInput] = useState('');
-  const [customPandalZone, setCustomPandalZone] = useState('South Kolkata');
-  const [customLocationCity, setCustomLocationCity] = useState('');
-  const [customPandalLandmark, setCustomPandalLandmark] = useState('');
-  const [customPandalMetro, setCustomPandalMetro] = useState('');
+  // Media state
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('');
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string>('');
+  const [videoFileName, setVideoFileName] = useState<string>('');
+  const [videoThumbnailUrl, setVideoThumbnailUrl] = useState<string>('');
+  const [videoDuration, setVideoDuration] = useState<string>('0:45');
+  const [showUrlFallback, setShowUrlFallback] = useState<boolean>(false);
+  const [customVideoUrl, setCustomVideoUrl] = useState<string>('');
+
+  // Pandal & Location State - start empty so user inputs their own choice
+  const [selectedPandalName, setSelectedPandalName] = useState('');
+  const [locationDistrictCity, setLocationDistrictCity] = useState('');
+  const [locationLandmark, setLocationLandmark] = useState('');
+
   const [isCertifiedHuman, setIsCertifiedHuman] = useState(true);
   const [allPandals, setAllPandals] = useState<PandalLandmark[]>(() =>
     StorageService.getAllPandals()
   );
-
-  // Camera settings
-  const [cameraOrPhone, setCameraOrPhone] = useState('Sony A7 IV / iPhone 16 Pro');
-  const [shutter, setShutter] = useState('1/250s');
-  const [aperture, setAperture] = useState('f/1.8');
-  const [iso, setIso] = useState('400');
-  const [tagsInput, setTagsInput] = useState('DurgaPuja, PujoVerse, Kolkata');
-  const [previewUrl, setPreviewUrl] = useState<string>('');
   const [error, setError] = useState('');
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setAllPandals(StorageService.getAllPandals());
+      const storedPandals = StorageService.getAllPandals();
+      setAllPandals(storedPandals);
+      setEntryType(initialType);
+      setDayNumber(currentDayNumber);
+      setError('');
+      // Leave empty so user can freely input their own custom pandal and location
+      setSelectedPandalName('');
+      setLocationDistrictCity('');
+      setLocationLandmark('');
     }
-  }, [isOpen]);
+  }, [isOpen, initialType, currentDayNumber]);
 
   if (!isOpen) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Photo selection from device
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      setError('Please select a valid image file (JPEG, PNG, WEBP).');
+      setError('Please select an image file (JPEG, PNG, WEBP).');
       return;
     }
 
-    if (file.size > 12 * 1024 * 1024) {
-      setError('Image file is too large. Max size is 12MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      setError('Image file is too large (max 15MB).');
       return;
     }
 
     setError('');
     const reader = new FileReader();
     reader.onload = () => {
-      setPreviewUrl(reader.result as string);
+      setPhotoPreviewUrl(reader.result as string);
     };
     reader.readAsDataURL(file);
   };
 
-  const handleSaveCustomPandal = () => {
-    if (!customPandalInput.trim()) return;
-    const effectiveZone = customLocationCity.trim() || customPandalZone;
-    const created = StorageService.addCustomPandal({
-      name: customPandalInput.trim(),
-      zone: effectiveZone,
-      city: customLocationCity.trim() || undefined,
-      landmark: customPandalLandmark.trim() || undefined,
-      metroStation: customPandalMetro.trim() || undefined,
-      addedBy: currentUser.name
-    });
-    setAllPandals(StorageService.getAllPandals());
-    setSelectedPandalName(created.name);
-    setIsAddingCustomPandal(false);
-    setCustomPandalInput('');
-    setCustomPandalLandmark('');
-    setCustomPandalMetro('');
-  };
+  // Handle Video selection from device
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  const filteredPandals = allPandals.filter((p) => {
-    const matchesZone = selectedZone === 'All Zones' || selectedZone === 'All West Bengal' || p.zone === selectedZone;
-    const matchesSearch =
-      !pandalSearch ||
-      p.name.toLowerCase().includes(pandalSearch.toLowerCase()) ||
-      (p.landmark && p.landmark.toLowerCase().includes(pandalSearch.toLowerCase())) ||
-      (p.city && p.city.toLowerCase().includes(pandalSearch.toLowerCase())) ||
-      p.zone.toLowerCase().includes(pandalSearch.toLowerCase());
-    return matchesZone && matchesSearch;
-  });
+    if (!file.type.startsWith('video/')) {
+      setError('Please select a valid video file (MP4, MOV, WEBM).');
+      return;
+    }
+
+    setError('');
+    setVideoFileName(file.name);
+    const objectUrl = URL.createObjectURL(file);
+    setVideoPreviewUrl(objectUrl);
+
+    // Extract duration & auto-capture first frame thumbnail
+    const videoElem = document.createElement('video');
+    videoElem.preload = 'metadata';
+    videoElem.src = objectUrl;
+    videoElem.onloadedmetadata = () => {
+      const mins = Math.floor(videoElem.duration / 60);
+      const secs = Math.floor(videoElem.duration % 60);
+      setVideoDuration(`${mins}:${secs < 10 ? '0' : ''}${secs}`);
+      videoElem.currentTime = Math.min(1, Math.max(0.1, videoElem.duration / 3));
+    };
+    videoElem.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.min(640, videoElem.videoWidth || 640);
+        canvas.height = Math.min(360, videoElem.videoHeight || 360);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(videoElem, 0, 0, canvas.width, canvas.height);
+          const thumb = canvas.toDataURL('image/jpeg', 0.7);
+          setVideoThumbnailUrl(thumb);
+        }
+      } catch {
+        // Fallback thumbnail if CORS or canvas issue
+      }
+    };
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!title.trim()) {
-      setError('Please provide a title for your photograph.');
+      setError('Please enter a title for your festival submission.');
       return;
     }
 
-    if (!previewUrl) {
-      setError('Please upload or snap a photo.');
-      return;
+    const effectivePandalName = selectedPandalName.trim() || 'Bagbazar Sarbojanin Durgotsav';
+    const effectiveZone = locationDistrictCity.trim() || 'Kolkata';
+    const effectiveCity = locationLandmark.trim()
+      ? `${effectiveZone} (${locationLandmark.trim()})`
+      : effectiveZone;
+
+    // Check if custom pandal needs adding to persistent database
+    const existingPandal = allPandals.find(
+      (p) => p.name.toLowerCase() === effectivePandalName.toLowerCase()
+    );
+    if (!existingPandal) {
+      StorageService.addCustomPandal({
+        name: effectivePandalName,
+        zone: effectiveZone,
+        city: effectiveZone,
+        landmark: locationLandmark.trim() || undefined,
+        addedBy: currentUser.name
+      });
     }
 
-    const tags = tagsInput
-      .split(',')
-      .map((t) => t.trim().replace(/^#/, ''))
-      .filter(Boolean);
+    if (entryType === 'photo') {
+      if (!photoPreviewUrl) {
+        setError('Please select a photo from your device.');
+        return;
+      }
 
-    const matchingPandal = allPandals.find((p) => p.name === selectedPandalName);
-    const chosenCity = customLocationCity.trim() || matchingPandal?.city || currentUser.city || 'West Bengal';
+      onSubmit({
+        userId: currentUser.id,
+        dayNumber,
+        title: title.trim(),
+        imageUrl: photoPreviewUrl,
+        photographerName: currentUser.name,
+        photographerAvatar: currentUser.avatar,
+        photographerBio: currentUser.bio,
+        instagramHandle: currentUser.instagramHandle,
+        isVerifiedHuman: true,
+        pandalLocation: effectivePandalName,
+        pandalZone: effectiveZone,
+        city: effectiveCity,
+        cameraGear: {
+          cameraOrPhone: 'Participant Phone / Camera'
+        },
+        caption: title.trim(),
+        tags: ['#DurgaPuja', '#Kolkata', '#Festival']
+      });
+    } else {
+      // Video submission
+      const effectiveVideoUrl = videoPreviewUrl || customVideoUrl.trim();
+      if (!effectiveVideoUrl) {
+        setError('Please upload a video from your device or provide a video link.');
+        return;
+      }
 
-    onSubmit({
-      userId: currentUser.id,
-      dayNumber,
-      title: title.trim(),
-      imageUrl: previewUrl,
-      photographerName: currentUser.name,
-      photographerAvatar: currentUser.avatar,
-      photographerBio: currentUser.bio,
-      instagramHandle: currentUser.instagramHandle,
-      isVerifiedHuman: true,
-      pandalLocation: selectedPandalName,
-      pandalZone: matchingPandal?.zone || customLocationCity.trim() || 'West Bengal',
-      city: chosenCity,
-      cameraGear: {
-        cameraOrPhone: cameraOrPhone.trim() || 'Smartphone',
-        shutter: shutter.trim() || undefined,
-        aperture: aperture.trim() || undefined,
-        iso: iso.trim() || undefined
-      },
-      caption: caption.trim() || 'Captured during the festive celebrations on PujoVerse.',
-      tags,
-      comments: []
-    });
+      const effectiveThumbnail =
+        videoThumbnailUrl ||
+        'https://images.unsplash.com/photo-1576487248805-cf45f6bcc67f?auto=format&fit=crop&w=1200&q=80';
+
+      if (onSubmitVideo) {
+        onSubmitVideo({
+          userId: currentUser.id,
+          dayNumber,
+          title: title.trim(),
+          videoUrl: effectiveVideoUrl,
+          thumbnailUrl: effectiveThumbnail,
+          duration: videoDuration || '0:45',
+          videographerName: currentUser.name,
+          videographerAvatar: currentUser.avatar,
+          videographerBio: currentUser.bio,
+          instagramHandle: currentUser.instagramHandle,
+          isVerifiedHuman: true,
+          pandalLocation: effectivePandalName,
+          pandalZone: effectiveZone,
+          city: effectiveCity,
+          cameraGear: {
+            cameraOrPhone: 'Participant Phone / Camera'
+          },
+          caption: title.trim(),
+          tags: ['#DurgaPuja', '#Kolkata', '#Reel']
+        });
+      }
+    }
 
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-[#141622] rounded-2xl border border-white/10 shadow-2xl p-5 sm:p-6 my-6 text-slate-100 max-h-[92vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-white/10">
-          <div>
-            <h2 className="text-xl font-bold font-display text-white flex items-center gap-2">
-              <Camera className="w-5 h-5 text-amber-400" />
-              <span>Submit to PujoVerse Daily Arena</span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-xl bg-[#111320] border border-amber-500/25 rounded-3xl p-5 sm:p-6 overflow-y-auto max-h-[92vh] shadow-2xl">
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Clean Header */}
+        <div className="mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🪔</span>
+            <h2 className="text-xl sm:text-2xl font-black text-white font-display">
+              Upload Festival Entry
             </h2>
-            <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
-              <span>Posting as:</span>
-              <img
-                src={currentUser.avatar}
-                alt={currentUser.name}
-                className="w-4 h-4 rounded-full object-cover"
-              />
-              <span className="font-semibold text-amber-300">{currentUser.name}</span>
-              <span className="text-slate-500">· Saved in your upload history</span>
-            </div>
           </div>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Submit your authentic Durga Puja moment for Day {dayNumber} Arena
+          </p>
+        </div>
+
+        {/* Tab Toggle: Photo vs Video */}
+        <div className="flex items-center p-1 rounded-2xl bg-white/[0.05] border border-white/10 mb-4">
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-white"
+            type="button"
+            onClick={() => {
+              setEntryType('photo');
+              setError('');
+            }}
+            className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              entryType === 'photo'
+                ? 'bg-amber-400 text-slate-950 shadow-md font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
           >
-            <X className="w-5 h-5" />
+            <Camera className="w-4 h-4" />
+            <span>📸 Photo Entry</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEntryType('video');
+              setError('');
+            }}
+            className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              entryType === 'video'
+                ? 'bg-rose-500 text-white shadow-md font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Film className="w-4 h-4" />
+            <span>🎬 Video / Reel Entry</span>
           </button>
         </div>
 
-        {isPast11PM && (
-          <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
-            <Clock className="w-4 h-4 shrink-0 text-amber-400" />
-            <span>
-              <strong>Uploads Closed at 11:00 PM:</strong> The daily battle deadline has passed. Today's battle is locked for winner & rank tracking. Submissions will reopen for the next day's dawn stage!
-            </span>
-          </div>
-        )}
-
         {error && (
-          <div className="mt-3 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium">
+            {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          {/* Photo File Picker with Preview */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Photo Upload <span className="text-amber-400">*</span>
-            </label>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Contest Day Picker */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/10">
+            <div>
+              <span className="text-xs font-bold text-slate-200 block">
+                Festival Day:
+              </span>
+              <span className="text-[11px] text-amber-400 font-mono">
+                {dayNumber === currentDayNumber ? '🔴 LIVE TODAY' : `Day ${dayNumber}`}
+              </span>
+            </div>
+            <select
+              value={dayNumber}
+              onChange={(e) => setDayNumber(Number(e.target.value))}
+              className="bg-[#1b1e2c] border border-amber-400/30 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 font-semibold cursor-pointer"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((d) => (
+                <option key={d} value={d}>
+                  Day {d} {d === currentDayNumber ? '★ LIVE TODAY' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            {previewUrl ? (
-              <div className="relative aspect-[16/9] w-full rounded-xl overflow-hidden bg-slate-950 border border-white/10">
-                <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+          {/* Photo Media Upload Zone (Direct from device) */}
+          {entryType === 'photo' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Upload Photograph from Device <span className="text-amber-400">*</span>
+              </label>
+              <div
+                onClick={() => photoInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors ${
+                  photoPreviewUrl
+                    ? 'border-emerald-500/50 bg-emerald-500/5'
+                    : 'border-white/15 hover:border-amber-400/50 bg-white/[0.02]'
+                }`}
+              >
+                {photoPreviewUrl ? (
+                  <div className="space-y-2">
+                    <img
+                      src={photoPreviewUrl}
+                      alt="Preview"
+                      className="max-h-52 mx-auto rounded-xl object-contain shadow-lg"
+                    />
+                    <p className="text-xs text-emerald-400 font-semibold flex items-center justify-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Photo selected! Click to change.</span>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    <div className="text-xs text-slate-200 font-medium">
+                      Click to choose photo from your phone or computer
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      JPEG, PNG, WEBP (tap to open gallery/camera)
+                    </p>
+                  </div>
+                )}
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Video Media Upload Zone (Direct from device) */}
+          {entryType === 'video' && (
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-300">
+                Upload Video from Device <span className="text-rose-400">*</span>
+              </label>
+
+              {!showUrlFallback ? (
+                <div
+                  onClick={() => videoInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-colors ${
+                    videoPreviewUrl
+                      ? 'border-rose-500/50 bg-rose-500/5'
+                      : 'border-white/15 hover:border-rose-400/50 bg-white/[0.02]'
+                  }`}
+                >
+                  {videoPreviewUrl ? (
+                    <div className="space-y-2">
+                      <video
+                        src={videoPreviewUrl}
+                        controls
+                        className="max-h-52 mx-auto rounded-xl object-contain bg-black shadow-lg"
+                      />
+                      <p className="text-xs text-rose-300 font-semibold flex items-center justify-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span>{videoFileName || 'Video selected!'} Click to choose different video.</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto">
+                        <Film className="w-6 h-6" />
+                      </div>
+                      <div className="text-xs text-slate-200 font-medium">
+                        Click to select video from your phone or device
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        MP4, MOV, WEBM (puja reels, dhunuchi dance, pandal clips)
+                      </p>
+                    </div>
+                  )}
+                  <input
+                    ref={videoInputRef}
+                    type="file"
+                    accept="video/*,video/mp4,video/webm,video/quicktime"
+                    onChange={handleVideoChange}
+                    className="hidden"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="url"
+                    value={customVideoUrl}
+                    onChange={(e) => {
+                      setCustomVideoUrl(e.target.value);
+                      setVideoPreviewUrl('');
+                    }}
+                    placeholder="Paste YouTube Shorts, YouTube, or direct MP4 link"
+                    className="w-full bg-[#1c1f2e] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-rose-400"
+                  />
+                </div>
+              )}
+
+              {/* Small toggle to paste URL if user specifically wants */}
+              <div className="flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setPreviewUrl('')}
-                  className="absolute top-2 right-2 p-1.5 rounded-full bg-black/70 hover:bg-black text-white text-xs flex items-center gap-1"
+                  onClick={() => setShowUrlFallback((prev) => !prev)}
+                  className="text-[11px] text-slate-400 hover:text-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
-                  <span>Change Photo</span>
+                  <LinkIcon className="w-3 h-3" />
+                  <span>{showUrlFallback ? '← Upload video from device file' : 'Or paste video link instead'}</span>
                 </button>
               </div>
-            ) : (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-white/20 hover:border-amber-400/60 rounded-xl p-6 text-center cursor-pointer transition-colors bg-white/[0.02]"
-              >
-                <Upload className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                <div className="text-sm font-semibold text-white">Click or tap to upload photo</div>
-                <div className="text-xs text-slate-400 mt-1">Supports JPEG, PNG, WEBP up to 12MB</div>
-              </div>
-            )}
+            </div>
+          )}
 
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Title <span className="text-amber-400">*</span>
+            </label>
             <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={
+                entryType === 'photo'
+                  ? 'e.g. Divine Pratima Eyes at Bagbazar Sarbojanin'
+                  : 'e.g. High-Energy Dhunuchi Dance at Sreebhumi'
+              }
+              className="w-full bg-[#1c1f2e] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
             />
           </div>
 
-          {/* Title & Stage */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Photo Title <span className="text-amber-400">*</span>
+          {/* Pandal & Shot Location Details */}
+          <div className="space-y-3 p-3.5 sm:p-4 rounded-2xl bg-amber-500/5 border border-amber-500/25">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-amber-400" />
+                <span>Pandal & Shot Location Details <span className="text-amber-400">*</span></span>
+              </label>
+              <span className="text-[10px] text-amber-400/80 font-mono">
+                {entryType === 'video' ? 'Video Location' : 'Photo Location'}
+              </span>
+            </div>
+
+            {/* Pandal or Club Name Input */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Pandal or Club Name <span className="text-amber-400">*</span>
               </label>
               <input
                 type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Incense Dance over Evening Dhaaks"
-                className="w-full bg-[#1c1f2e] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
                 required
+                list="upload-pandals-datalist"
+                value={selectedPandalName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedPandalName(val);
+                  const matched = allPandals.find(
+                    (p) => p.name.toLowerCase() === val.toLowerCase()
+                  );
+                  if (matched) {
+                    if (matched.city || matched.zone) {
+                      setLocationDistrictCity(matched.city || matched.zone);
+                    }
+                    if (matched.landmark || matched.metroStation) {
+                      setLocationLandmark(matched.landmark || matched.metroStation || '');
+                    }
+                  }
+                }}
+                placeholder="e.g. Sreebhumi Sporting, Bagbazar Sarbojanin, or your local para club"
+                className="w-full bg-[#1c1f2e] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
               />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Festival Stage
-              </label>
-              <select
-                value={dayNumber}
-                onChange={(e) => setDayNumber(Number(e.target.value))}
-                className="w-full bg-[#1c1f2e] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
-                  <option key={d} value={d}>
-                    Day {d} {d === 9 ? '(Live Climax)' : ''}
+              <datalist id="upload-pandals-datalist">
+                {allPandals.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.zone}
                   </option>
                 ))}
-              </select>
-            </div>
-          </div>
-
-          {/* CUSTOM SELECT PANDAL / LANDMARK SECTION */}
-          <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5 font-display">
-                <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                <span>Select Pandal / Landmark</span>
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setIsAddingCustomPandal((prev) => !prev)}
-                className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors"
-              >
-                <Plus className="w-3 h-3" />
-                <span>{isAddingCustomPandal ? 'Back to List' : 'Add Custom Landmark'}</span>
-              </button>
+              </datalist>
             </div>
 
-            {!isAddingCustomPandal ? (
-              <div className="space-y-2">
-                {/* Zone Filter & Search Bar */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <label className="text-[11px] text-slate-400 mb-1 block">Filter by Zone</label>
-                    <select
-                      value={selectedZone}
-                      onChange={(e) => setSelectedZone(e.target.value)}
-                      className="w-full bg-[#161824] border border-white/10 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                    >
-                      {PANDAL_ZONES.map((z) => (
-                        <option key={z} value={z}>
-                          {z}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-slate-400 mb-1 block">Search Landmark</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={pandalSearch}
-                        onChange={(e) => setPandalSearch(e.target.value)}
-                        placeholder="Search Bagbazar, Ekdalia, Sreebhumi..."
-                        className="w-full bg-[#161824] border border-white/10 rounded-lg pl-7 pr-2.5 py-1.5 text-white text-xs"
-                      />
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Main Pandal Dropdown */}
-                <div>
-                  <label className="text-[11px] text-slate-400 mb-1 block">
-                    Choose Pandal / Landmark ({filteredPandals.length} available)
-                  </label>
-                  <select
-                    value={selectedPandalName}
-                    onChange={(e) => setSelectedPandalName(e.target.value)}
-                    className="w-full bg-[#1c1f2e] border border-white/15 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
-                  >
-                    {filteredPandals.map((p) => (
-                      <option key={p.id} value={p.name}>
-                        {p.name} ({p.zone}) {p.isCustom ? '★ Custom' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            ) : (
-              /* Custom Landmark Creator */
-              <div className="p-3.5 rounded-xl bg-[#181a28] border border-amber-500/30 space-y-2.5 text-xs">
-                <div className="font-bold text-amber-300 flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Input Custom Pandal & Landmark</span>
-                </div>
-                <div className="text-[11px] text-slate-300">
-                  Register your neighborhood or favorite puja pandal. It will be stored and selectable by all real players!
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                  <div>
-                    <label className="text-[10px] text-slate-400 mb-0.5 block font-mono">Pandal / Club Name *</label>
-                    <input
-                      type="text"
-                      value={customPandalInput}
-                      onChange={(e) => setCustomPandalInput(e.target.value)}
-                      placeholder="e.g. Chetla Agrani, Dada Bhai Sporting, Alamganj..."
-                      className="w-full bg-[#121420] border border-white/10 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 mb-0.5 block font-mono">West Bengal Region</label>
-                    <select
-                      value={customPandalZone}
-                      onChange={(e) => setCustomPandalZone(e.target.value)}
-                      className="w-full bg-[#121420] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs"
-                    >
-                      <option value="North Kolkata">North Kolkata</option>
-                      <option value="South Kolkata">South Kolkata</option>
-                      <option value="Central Kolkata">Central Kolkata</option>
-                      <option value="Salt Lake & East Kolkata">Salt Lake & East Kolkata</option>
-                      <option value="Howrah & Hooghly">Howrah & Hooghly</option>
-                      <option value="North & South 24 Parganas">North & South 24 Parganas</option>
-                      <option value="Siliguri & North Bengal">Siliguri & North Bengal</option>
-                      <option value="Durgapur & Bardhaman">Durgapur & Bardhaman</option>
-                      <option value="Medinipur & South Bengal">Medinipur & South Bengal</option>
-                      <option value="Birbhum & Bolpur">Birbhum & Bolpur</option>
-                      <option value="Custom West Bengal Location">Custom West Bengal Location</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[10px] text-slate-400 mb-0.5 block font-mono">Type City / District (All WB)</label>
-                    <input
-                      type="text"
-                      value={customLocationCity}
-                      onChange={(e) => setCustomLocationCity(e.target.value)}
-                      placeholder="e.g. Siliguri, Durgapur, Chandannagar"
-                      className="w-full bg-[#121420] border border-amber-400/40 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 mb-0.5 block font-mono">Nearest Metro / Station</label>
-                    <input
-                      type="text"
-                      value={customPandalMetro}
-                      onChange={(e) => setCustomPandalMetro(e.target.value)}
-                      placeholder="e.g. Kalighat Metro, Howrah Junction"
-                      className="w-full bg-[#121420] border border-white/10 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 mb-0.5 block font-mono">Landmark / Crossing</label>
-                    <input
-                      type="text"
-                      value={customPandalLandmark}
-                      onChange={(e) => setCustomPandalLandmark(e.target.value)}
-                      placeholder="e.g. Near Deshapriya Park"
-                      className="w-full bg-[#121420] border border-white/10 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingCustomPandal(false)}
-                    className="px-3 py-1.5 rounded text-slate-400 hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveCustomPandal}
-                    disabled={!customPandalInput.trim()}
-                    className="px-3.5 py-1.5 rounded-lg bg-amber-400 text-slate-950 font-bold flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Save & Select Landmark</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Caption / Story */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Story Behind the Shot
-            </label>
-            <textarea
-              rows={2}
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder="What feeling or crowd moment did you witness?"
-              className="w-full bg-[#1c1f2e] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 resize-none"
-            />
-          </div>
-
-          {/* Camera Settings EXIF */}
-          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
-            <div className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5" />
-              <span>Camera Gear & EXIF Settings</span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            {/* District/City & Specific Landmark/Para Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
-                <label className="text-[11px] text-slate-400">Device/Camera</label>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  District / City / Zone <span className="text-amber-400">*</span>
+                </label>
                 <input
                   type="text"
-                  value={cameraOrPhone}
-                  onChange={(e) => setCameraOrPhone(e.target.value)}
-                  placeholder="e.g. Sony A7IV"
-                  className="w-full bg-[#161824] border border-white/10 rounded px-2 py-1.5 text-white"
+                  required
+                  list="upload-zones-datalist"
+                  value={locationDistrictCity}
+                  onChange={(e) => setLocationDistrictCity(e.target.value)}
+                  placeholder="e.g. Kolkata, North 24 Pgs, Howrah..."
+                  className="w-full bg-[#1c1f2e] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
                 />
+                <datalist id="upload-zones-datalist">
+                  <option value="North Kolkata" />
+                  <option value="South Kolkata" />
+                  <option value="Central Kolkata" />
+                  <option value="Salt Lake & New Town" />
+                  <option value="Howrah" />
+                  <option value="North 24 Parganas" />
+                  <option value="South 24 Parganas" />
+                  <option value="Hooghly & Chandannagar" />
+                  <option value="Nadia & Kalyani" />
+                  <option value="Siliguri" />
+                  <option value="Durgapur" />
+                </datalist>
               </div>
 
               <div>
-                <label className="text-[11px] text-slate-400">Shutter Speed</label>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Landmark / Street / Para
+                </label>
                 <input
                   type="text"
-                  value={shutter}
-                  onChange={(e) => setShutter(e.target.value)}
-                  placeholder="e.g. 1/250s"
-                  className="w-full bg-[#161824] border border-white/10 rounded px-2 py-1.5 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-slate-400">Aperture</label>
-                <input
-                  type="text"
-                  value={aperture}
-                  onChange={(e) => setAperture(e.target.value)}
-                  placeholder="e.g. f/1.8"
-                  className="w-full bg-[#161824] border border-white/10 rounded px-2 py-1.5 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-slate-400">ISO</label>
-                <input
-                  type="text"
-                  value={iso}
-                  onChange={(e) => setIso(e.target.value)}
-                  placeholder="e.g. 400"
-                  className="w-full bg-[#161824] border border-white/10 rounded px-2 py-1.5 text-white"
+                  value={locationLandmark}
+                  onChange={(e) => setLocationLandmark(e.target.value)}
+                  placeholder="e.g. VIP Road Lake Town, Shyambazar 5-Point"
+                  className="w-full bg-[#1c1f2e] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
                 />
               </div>
             </div>
+
+            {/* Quick popular pandals chips */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-[10px] text-slate-400">Quick pick:</span>
+              {['Bagbazar Sarbojanin', 'Sreebhumi Sporting', 'Suruchi Sangha', 'Ekdalia Evergreen', 'Tridhara Sammilani', 'Maddox Square'].map((pName) => (
+                <button
+                  key={pName}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPandalName(pName);
+                    const matched = allPandals.find(
+                      (p) => p.name.toLowerCase() === pName.toLowerCase()
+                    );
+                    if (matched) {
+                      setLocationDistrictCity(matched.city || matched.zone || 'Kolkata');
+                      if (matched.landmark || matched.metroStation) {
+                        setLocationLandmark(matched.landmark || matched.metroStation || '');
+                      }
+                    }
+                  }}
+                  className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                    selectedPandalName.toLowerCase().includes(pName.toLowerCase().slice(0, 6))
+                      ? 'bg-amber-400/25 text-amber-300 border-amber-400/50'
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {pName.split(' ')[0]}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* 100% Real Human Photography Guarantee */}
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-            <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+          {/* 100% Real Human Guarantee */}
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+            <label className="flex items-center gap-2 cursor-pointer text-xs">
               <input
                 type="checkbox"
                 required
                 checked={isCertifiedHuman}
                 onChange={(e) => setIsCertifiedHuman(e.target.checked)}
-                className="rounded border-emerald-400/50 text-emerald-500 focus:ring-emerald-400 w-4 h-4 bg-[#10121a] mt-0.5"
+                className="rounded border-emerald-400/50 text-emerald-500 focus:ring-emerald-400 w-4 h-4 bg-[#10121a] cursor-pointer"
               />
-              <div>
-                <span className="font-bold text-emerald-300 block">
-                  ✓ 100% Real Human Photograph Guarantee
-                </span>
-                <span className="text-slate-300 text-[11px] leading-relaxed block mt-0.5">
-                  I certify this photo was taken by a real human player using a camera or smartphone in West Bengal, with strictly ZERO AI generation or manipulation.
-                </span>
-              </div>
+              <span className="font-semibold text-emerald-300">
+                100% Real Human Player: Genuine festival media captured by me
+              </span>
             </label>
           </div>
 
@@ -539,21 +616,29 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white"
+              className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isPast11PM || !isCertifiedHuman}
-              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all ${
+              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 isPast11PM || !isCertifiedHuman
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : entryType === 'video'
+                  ? 'bg-gradient-to-r from-rose-500 to-amber-500 hover:brightness-110 text-white shadow-lg shadow-rose-500/20 active:scale-95'
                   : 'bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-110 text-slate-950 shadow-lg shadow-amber-500/20 active:scale-95'
               }`}
             >
               <Sparkles className="w-4 h-4" />
-              <span>{isPast11PM ? 'Uploads Closed at 11 PM' : 'Submit Real Human Photo'}</span>
+              <span>
+                {isPast11PM
+                  ? 'Uploads Closed at 11 PM'
+                  : entryType === 'video'
+                  ? 'Submit Festival Reel'
+                  : 'Submit Festival Photo'}
+              </span>
             </button>
           </div>
         </form>

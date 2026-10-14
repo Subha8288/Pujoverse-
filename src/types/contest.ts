@@ -92,6 +92,7 @@ export interface UserProfile {
   avatar: string;
   bio: string;
   city: string;
+  district?: string;
   cameraGearUsed?: string;
   isVerifiedHuman?: boolean;
   role?: 'owner' | 'admin' | 'creator' | 'participant';
@@ -100,7 +101,9 @@ export interface UserProfile {
   votedCount: number;
   submissionsCount: number;
   favoritePandal: string;
+  favoritePandalLocation?: string;
   uploadedPhotoIds?: string[];
+  uploadedVideoIds?: string[];
   createdAt?: string;
 }
 
@@ -119,4 +122,45 @@ export interface PandalLandmark {
   createdAt?: string;
 }
 
-export type ViewTab = 'arena' | 'duel' | 'leaderboard' | 'past_winners' | 'tips' | 'profile' | 'owner' | 'website_guide';
+export interface VideoComment {
+  id: string;
+  userId?: string;
+  userName: string;
+  userAvatar: string;
+  instagramHandle?: string;
+  text: string;
+  timestamp: string;
+  isVerifiedHuman?: boolean;
+}
+
+export interface VideoEntry {
+  id: string;
+  userId?: string;
+  dayNumber: number;
+  title: string;
+  videoUrl: string; // YouTube Shorts, YouTube Embed URL, or direct video link
+  thumbnailUrl: string;
+  duration?: string;
+  videographerName: string;
+  videographerAvatar: string;
+  videographerBio?: string;
+  instagramHandle?: string;
+  isVerifiedHuman?: boolean;
+  pandalLocation: string;
+  pandalZone?: string;
+  city: string;
+  cameraGear?: CameraGear;
+  caption: string;
+  votes: number;
+  views?: number;
+  wins?: number;
+  matchups?: number;
+  timestamp: string;
+  tags: string[];
+  awardBadge?: string;
+  comments?: VideoComment[];
+  isFeatured?: boolean;
+  moderationStatus?: 'approved' | 'flagged' | 'hidden';
+}
+
+export type ViewTab = 'arena' | 'video-arena' | 'leaderboard' | 'profile' | 'owner';

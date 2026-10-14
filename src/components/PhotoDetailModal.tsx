@@ -29,6 +29,7 @@ interface PhotoDetailModalProps {
   onAddComment?: (photoId: string, text: string) => void;
   onEditPhoto?: (photo: PhotoEntry) => void;
   onDeleteComment?: (photoId: string, commentId: string) => void;
+  onDeletePhoto?: (photoId: string) => void;
 }
 
 export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
@@ -43,10 +44,12 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
   onShare,
   onAddComment,
   onEditPhoto,
-  onDeleteComment
+  onDeleteComment,
+  onDeletePhoto
 }) => {
   const [commentInput, setCommentInput] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!isOpen || !photo) return null;
 
@@ -75,6 +78,41 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
               <Edit3 className="w-3.5 h-3.5" />
               <span>Edit Details</span>
             </button>
+          )}
+
+          {Boolean(currentUser?.isOwner || (currentUser?.id && currentUser.id === photo.userId)) && onDeletePhoto && (
+            confirmDelete ? (
+              <div className="flex items-center gap-1.5 bg-black/85 px-2.5 py-1 rounded-full border border-rose-500/60 shadow-xl backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeletePhoto(photo.id);
+                    onClose();
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Confirm</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-2 py-1 rounded-full text-slate-300 hover:text-white text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="px-3 py-1.5 rounded-full bg-rose-600/90 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg transition-transform hover:scale-105"
+                title="Delete Photo from Contest"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            )
           )}
 
           <button
@@ -285,7 +323,42 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
               <div className="text-[10px] text-slate-400">Verified community votes</div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {Boolean(currentUser?.isOwner || (currentUser?.id && currentUser.id === photo.userId)) && onDeletePhoto && (
+                confirmDelete ? (
+                  <div className="flex items-center gap-1.5 bg-rose-950/90 p-1 rounded-xl border border-rose-500/70 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeletePhoto(photo.id);
+                        onClose();
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Confirm Delete</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="px-2 py-1.5 rounded-lg bg-white/10 text-slate-300 hover:text-white text-xs"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="p-2.5 rounded-xl border border-rose-500/30 hover:border-rose-500/60 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 transition-colors flex items-center gap-1.5 text-xs font-bold"
+                    title="Delete Photo from Contest (Ruler/Owner)"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Delete Photo</span>
+                  </button>
+                )
+              )}
+
               <button
                 onClick={() => onShare(photo)}
                 className="p-2.5 rounded-xl border border-white/10 hover:border-white/20 text-slate-300 hover:text-white transition-colors"

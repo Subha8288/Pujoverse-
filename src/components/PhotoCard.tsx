@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PhotoEntry } from '../types/contest';
-import { Heart, Camera, MapPin, Share2, ZoomIn, Instagram, UserCheck, MessageCircle, Edit3 } from 'lucide-react';
+import { Heart, Camera, MapPin, Share2, Instagram, UserCheck, MessageCircle, Edit3, Trash2 } from 'lucide-react';
 
 interface PhotoCardProps {
   photo: PhotoEntry;
@@ -13,6 +13,7 @@ interface PhotoCardProps {
   isPast11PM?: boolean;
   isOwner?: boolean;
   onEditPhoto?: (photo: PhotoEntry) => void;
+  onDeletePhoto?: (photoId: string) => void;
 }
 
 export const PhotoCard: React.FC<PhotoCardProps> = ({
@@ -25,9 +26,11 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   rankBadge,
   isPast11PM,
   isOwner,
-  onEditPhoto
+  onEditPhoto,
+  onDeletePhoto
 }) => {
   const [imageError, setImageError] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [showGear, setShowGear] = useState(false);
   const [isVoting, setIsVoting] = useState(false);
 
@@ -103,6 +106,50 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
               <span>Edit</span>
             </button>
           )}
+
+          {onDeletePhoto && (
+            showConfirmDelete ? (
+              <div
+                className="flex items-center gap-1 bg-black/90 p-1 rounded-full border border-rose-500/60 shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeletePhoto(photo.id);
+                    setShowConfirmDelete(false);
+                  }}
+                  className="px-2 py-0.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold shadow"
+                >
+                  Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowConfirmDelete(false);
+                  }}
+                  className="px-1.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-[10px]"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowConfirmDelete(true);
+                }}
+                className="px-2 py-1 rounded-full bg-rose-600/90 hover:bg-rose-600 text-white font-bold text-[10px] flex items-center gap-1 shadow-md transition-all hover:scale-105"
+                title="Delete Photo from Contest"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Delete</span>
+              </button>
+            )
+          )}
           <button
             onClick={handleShareClick}
             className="w-8 h-8 rounded-full bg-black/60 hover:bg-amber-500 hover:text-slate-950 text-white backdrop-blur-md flex items-center justify-center transition-colors"
@@ -111,9 +158,6 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           >
             <Share2 className="w-3.5 h-3.5" />
           </button>
-          <div className="w-8 h-8 rounded-full bg-black/60 text-white backdrop-blur-md flex items-center justify-center group-hover:scale-110 transition-transform">
-            <ZoomIn className="w-3.5 h-3.5" />
-          </div>
         </div>
 
         {/* Pandal & City on image bottom */}

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserProfile, PhotoEntry } from '../types/contest';
 import { StorageService } from '../services/storage';
+import { POPULAR_PANDALS_DATA } from '../data/pandals';
 import {
   X,
   Award,
@@ -16,7 +17,9 @@ import {
   UserCheck,
   ShieldCheck,
   CheckCircle2,
-  Crown
+  Crown,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 
 interface UserProfileModalProps {
@@ -29,6 +32,8 @@ interface UserProfileModalProps {
   onInspectPhoto: (photo: PhotoEntry) => void;
   onOpenSwitchAccount?: () => void;
   onOpenOwnerPortal?: () => void;
+  onDeleteProfile?: (userId: string) => void;
+  onDeletePhoto?: (photoId: string) => void;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -40,16 +45,22 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onUpdateProfile,
   onInspectPhoto,
   onOpenSwitchAccount,
-  onOpenOwnerPortal
+  onOpenOwnerPortal,
+  onDeleteProfile,
+  onDeletePhoto
 }) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState<'uploads' | 'votes' | 'badges'>('uploads');
   const [name, setName] = useState(user.name);
   const [instagramHandle, setInstagramHandle] = useState(user.instagramHandle || '@');
   const [bio, setBio] = useState(user.bio);
   const [city, setCity] = useState(user.city);
+  const [district, setDistrict] = useState(user.district || 'Kolkata');
   const [cameraGearUsed, setCameraGearUsed] = useState(user.cameraGearUsed || 'Sony A7 IV · 35mm f/1.4 GM');
   const [favoritePandal, setFavoritePandal] = useState(user.favoritePandal);
+  const [favoritePandalLocation, setFavoritePandalLocation] = useState(user.favoritePandalLocation || user.city || 'Kolkata');
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
 
   const dpInputRef = useRef<HTMLInputElement>(null);
 
@@ -90,9 +101,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       name: name.trim() || user.name,
       instagramHandle: formattedInsta,
       bio,
-      city,
+      city: city.trim() || user.city,
+      district: district.trim() || user.district || 'Kolkata',
       cameraGearUsed,
-      favoritePandal,
+      favoritePandal: favoritePandal.trim() || user.favoritePandal,
+      favoritePandalLocation: favoritePandalLocation.trim() || user.favoritePandalLocation || city.trim(),
       isVerifiedHuman: true,
       badges: updatedBadges
     });
@@ -255,7 +268,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <span className="text-slate-600">·</span>
                   <div className="flex items-center gap-1">
                     <MapPin className="w-3 h-3 text-amber-400" />
-                    <span>{user.city}</span>
+                    <span>{user.city}{user.district && user.district !== user.city ? ` (${user.district})` : ''}</span>
                   </div>
                   {user.cameraGearUsed && (
                     <>
@@ -269,6 +282,25 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </div>
 
                 <p className="text-xs text-slate-300 mt-2 leading-relaxed">{user.bio}</p>
+
+                {/* Favorite Pandal & Own Location Showcase */}
+                <div className="mt-2.5 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-[#181a28] to-[#111320] border border-amber-500/25 flex items-start gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                      Favorite Pandal & Location
+                    </div>
+                    <div className="font-bold text-white text-xs truncate mt-0.5">
+                      {user.favoritePandal || 'Bagbazar Sarbojanin Durgotsav'}
+                    </div>
+                    <div className="text-slate-300 text-[11px] flex items-center gap-1.5 mt-0.5">
+                      <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
+                      <span className="truncate">{user.favoritePandalLocation || user.city || 'Kolkata, West Bengal'}</span>
+                    </div>
+                  </div>
+                </div>
               </>
             ) : (
               <form onSubmit={handleSave} className="space-y-2 text-xs">
@@ -312,20 +344,75 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] text-slate-400">City</label>
+                    <label className="text-[10px] text-slate-400">District / Region</label>
+                    <input
+                      type="text"
+                      list="profile-districts-list"
+                      value={district}
+                      onChange={(e) => setDistrict(e.target.value)}
+                      placeholder="e.g. Kolkata, Nadia..."
+                      className="w-full bg-[#1b1e2e] border border-white/10 rounded px-2.5 py-1.5 text-white"
+                    />
+                    <datalist id="profile-districts-list">
+                      <option value="Kolkata" />
+                      <option value="North 24 Parganas" />
+                      <option value="South 24 Parganas" />
+                      <option value="Howrah" />
+                      <option value="Hooghly" />
+                      <option value="Nadia" />
+                      <option value="Birbhum" />
+                      <option value="Paschim Bardhaman" />
+                      <option value="Purba Bardhaman" />
+                      <option value="Siliguri & North Bengal" />
+                      <option value="Paschim Medinipur" />
+                      <option value="Purba Medinipur" />
+                      <option value="Murshidabad" />
+                      <option value="Bankura" />
+                      <option value="Malda" />
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400">City / Locality</label>
                     <input
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
+                      placeholder="e.g. Salt Lake, Behala..."
                       className="w-full bg-[#1b1e2e] border border-white/10 rounded px-2.5 py-1.5 text-white"
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] text-slate-400">Favorite Pandal</label>
+                    <label className="text-[10px] text-slate-400">Favorite Pandal Name</label>
                     <input
                       type="text"
+                      list="profile-pandals-list"
                       value={favoritePandal}
-                      onChange={(e) => setFavoritePandal(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFavoritePandal(val);
+                        const match = POPULAR_PANDALS_DATA.find((p) => p.name.toLowerCase() === val.toLowerCase());
+                        if (match && (!favoritePandalLocation || favoritePandalLocation === 'Kolkata')) {
+                          setFavoritePandalLocation(`${match.landmark || match.metroStation || match.zone}, ${match.zone}`);
+                        }
+                      }}
+                      placeholder="e.g. Bagbazar Sarbojanin or Para Club"
+                      className="w-full bg-[#1b1e2e] border border-white/10 rounded px-2.5 py-1.5 text-white"
+                    />
+                    <datalist id="profile-pandals-list">
+                      {POPULAR_PANDALS_DATA.map((p) => (
+                        <option key={p.id} value={p.name} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400">Pandal Location / Address</label>
+                    <input
+                      type="text"
+                      value={favoritePandalLocation}
+                      onChange={(e) => setFavoritePandalLocation(e.target.value)}
+                      placeholder="e.g. Shyambazar or VIP Road"
                       className="w-full bg-[#1b1e2e] border border-white/10 rounded px-2.5 py-1.5 text-white"
                     />
                   </div>
@@ -444,6 +531,49 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                       Day {photo.dayNumber}
                     </div>
 
+                    {onDeletePhoto && (
+                      deletingPhotoId === photo.id ? (
+                        <div
+                          className="absolute top-2 right-2 flex items-center gap-1 bg-black/95 p-1 rounded-lg border border-rose-500/80 shadow-2xl z-20"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeletePhoto(photo.id);
+                              setDeletingPhotoId(null);
+                            }}
+                            className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold shadow"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeletingPhotoId(null);
+                            }}
+                            className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[10px]"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeletingPhotoId(photo.id);
+                          }}
+                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 hover:bg-rose-600 text-slate-300 hover:text-white transition-all shadow-md z-10"
+                          title="Delete this photo"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )
+                    )}
+
                     <div className="absolute bottom-2 left-2 right-2 text-white">
                       <div className="text-xs font-bold truncate">{photo.title}</div>
                       <div className="text-[10px] text-amber-300 font-mono mt-0.5">
@@ -525,6 +655,54 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Profile Deletion & Management Option */}
+        <div className="mt-6 pt-5 border-t border-white/10">
+          <div className="p-4 rounded-xl bg-rose-500/5 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1.5 text-rose-400 font-bold text-xs font-display">
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Player Profile</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Permanently remove this profile from this device. Your daily voting records and local history will be reset.
+              </p>
+            </div>
+
+            {showDeleteConfirm ? (
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onDeleteProfile) {
+                      onDeleteProfile(user.id);
+                    }
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Confirm Delete</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-2.5 py-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-white text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-3 py-1.5 rounded-lg border border-rose-500/40 hover:bg-rose-500/15 text-rose-400 text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Profile</span>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
